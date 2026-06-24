@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brew & Scoop — Stock Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 20h28c2.2 0 4 1.8 4 4v2c0 6.6-5.4 12-12 12H16c-6.6 0-12-5.4-12-12v-2c0-2.2 1.8-4 4-4z" stroke="currentColor" stroke-width="2.5" fill="rgba(196,165,116,0.15)"/>
+            <path d="M36 20V14c0-3.3 2.7-6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M14 38c2 3 5 5 10 5s8-2 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity="0.5"/>
+            <circle cx="20" cy="28" r="2" fill="currentColor" opacity="0.4"/>
+            <circle cx="28" cy="30" r="1.5" fill="currentColor" opacity="0.3"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Brew & Scoop</h1>
+          <span>Stock Management</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Dashboard</span>
+        </button>
+        <button class="nav-item" data-view="products">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <span>Products</span>
+        </button>
+        <button class="nav-item" data-view="sell">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          <span>Sell</span>
+        </button>
+        <button class="nav-item" data-view="restock">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Restock</span>
+        </button>
+        <button class="nav-item" data-view="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>History</span>
+        </button>
+        <button class="nav-item" data-view="sales">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+          <span>Sales Reports</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <p>Coffee · Tea · Juice & More</p>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <!-- Dashboard -->
+      <section id="view-dashboard" class="view active">
+        <header class="topbar">
+          <div>
+            <h2>Dashboard</h2>
+            <p>Overview of your Brew & Scoop inventory</p>
+          </div>
+          <div class="date-badge" id="current-date"></div>
+        </header>
+
+        <div class="stats-grid" id="dashboard-stats"></div>
+
+        <div class="dashboard-grid">
+          <div class="card">
+            <div class="card-header">
+              <h3>Low Stock Alerts</h3>
+              <span class="text-muted" id="low-stock-label"></span>
+            </div>
+            <div class="card-body" id="low-stock-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Top Sellers</h3>
+              <span class="text-muted">All time</span>
+            </div>
+            <div class="card-body" id="top-products-list"></div>
+          </div>
+
+          <div class="card card-wide">
+            <div class="card-header">
+              <h3>Inventory by Category</h3>
+            </div>
+            <div class="card-body" id="category-breakdown"></div>
+          </div>
+
+          <div class="card card-wide">
+            <div class="card-header">
+              <h3>Recent Activity</h3>
+              <button class="btn btn-ghost btn-sm" data-view="history">View all</button>
+            </div>
+            <div class="card-body" id="recent-activity"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Products -->
+      <section id="view-products" class="view">
+        <header class="topbar">
+          <div>
+            <h2>Products</h2>
+            <p>Manage your inventory items</p>
+          </div>
+          <button class="btn btn-primary" id="btn-add-product">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Add Product
+          </button>
+        </header>
+
+        <div class="toolbar">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="search" id="product-search" placeholder="Search products, SKU...">
+          </div>
+          <select id="product-category-filter">
+            <option value="">All Categories</option>
+            {% for cat in categories %}
+            <option value="{{ cat }}">{{ cat }}</option>
+            {% endfor %}
+          </select>
+          <label class="checkbox-label">
+            <input type="checkbox" id="low-stock-filter"> Low stock only
+          </label>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Stock</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="products-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sell -->
+      <section id="view-sell" class="view">
+        <header class="topbar">
+          <div>
+            <h2>Point of Sale</h2>
+            <p>Record a sale — stock updates automatically</p>
+          </div>
+        </header>
+
+        <div class="sell-layout">
+          <div class="card sell-form-card">
+            <div class="card-header"><h3>New Sale</h3></div>
+            <div class="card-body">
+              <form id="sell-form">
+                <div class="form-group">
+                  <label for="sell-product">Select Product</label>
+                  <select id="sell-product" required>
+                    <option value="">Choose a product...</option>
+                  </select>
+                </div>
+
+                <div class="product-preview" id="sell-preview" hidden>
+                  <div class="preview-row"><span>Unit Price</span><strong id="preview-price">—</strong></div>
+                  <div class="preview-row"><span>Available</span><strong id="preview-stock">—</strong></div>
+                  <div class="preview-row"><span>Category</span><strong id="preview-category">—</strong></div>
+                </div>
+
+                <div class="form-group">
+                  <label>Quantity</label>
+                  <div class="qty-input">
+                    <button type="button" class="qty-btn" id="qty-minus">−</button>
+                    <input type="number" id="sell-quantity" value="1" min="1" required>
+                    <button type="button" class="qty-btn" id="qty-plus">+</button>
+                  </div>
+                </div>
+
+                <div class="total-display">
+                  <span>Total</span>
+                  <strong id="sell-total">RWF 0</strong>
+                </div>
+
+                <div class="form-group">
+                  <label for="sell-notes">Notes (optional)</label>
+                  <input type="text" id="sell-notes" placeholder="Customer name, order ref...">
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-complete-sale">
+                  Complete Sale
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Quick Pick</h3></div>
+            <div class="card-body">
+              <div class="quick-pick-grid" id="quick-pick-grid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Restock -->
+      <section id="view-restock" class="view">
+        <header class="topbar">
+          <div>
+            <h2>Restock & Adjust</h2>
+            <p>Add stock or correct inventory counts</p>
+          </div>
+        </header>
+
+        <div class="sell-layout">
+          <div class="card">
+            <div class="card-header"><h3>Restock Product</h3></div>
+            <div class="card-body">
+              <form id="restock-form">
+                <div class="form-group">
+                  <label for="restock-product">Product</label>
+                  <select id="restock-product" required>
+                    <option value="">Choose a product...</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="restock-quantity">Quantity to Add</label>
+                  <input type="number" id="restock-quantity" min="1" value="10" required>
+                </div>
+                <div class="form-group">
+                  <label for="restock-notes">Notes</label>
+                  <input type="text" id="restock-notes" placeholder="Supplier, delivery ref...">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Add Stock</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Adjust Stock Count</h3></div>
+            <div class="card-body">
+              <form id="adjust-form">
+                <div class="form-group">
+                  <label for="adjust-product">Product</label>
+                  <select id="adjust-product" required>
+                    <option value="">Choose a product...</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="adjust-quantity">New Quantity</label>
+                  <input type="number" id="adjust-quantity" min="0" required>
+                </div>
+                <div class="form-group">
+                  <label for="adjust-notes">Reason</label>
+                  <input type="text" id="adjust-notes" placeholder="Stocktake, spoilage, etc.">
+                </div>
+                <button type="submit" class="btn btn-ghost btn-block">Update Count</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- History -->
+      <section id="view-history" class="view">
+        <header class="topbar">
+          <div>
+            <h2>Transaction History</h2>
+            <p>All sales, restocks, and adjustments</p>
+          </div>
+        </header>
+
+        <div class="toolbar">
+          <select id="history-type-filter">
+            <option value="">All Types</option>
+            <option value="sale">Sales</option>
+            <option value="restock">Restocks</option>
+            <option value="adjustment">Adjustments</option>
+          </select>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Product</th>
+                <th>Type</th>
+                <th>Qty</th>
+                <th>Amount</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="history-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sales Reports -->
+      <section id="view-sales" class="view">
+        <header class="topbar">
+          <div>
+            <h2>Sales Reports</h2>
+            <p>Track revenue by day, week, month, or custom range</p>
+          </div>
+        </header>
+
+        <div class="period-filters" id="period-filters">
+          <button type="button" class="period-btn active" data-preset="today">Today</button>
+          <button type="button" class="period-btn" data-preset="week">This Week</button>
+          <button type="button" class="period-btn" data-preset="month">This Month</button>
+          <button type="button" class="period-btn" data-preset="custom">Custom Range</button>
+        </div>
+
+        <div class="custom-range-bar" id="custom-range-bar" hidden>
+          <div class="form-group">
+            <label for="sales-from">From</label>
+            <input type="date" id="sales-from">
+          </div>
+          <div class="form-group">
+            <label for="sales-to">To</label>
+            <input type="date" id="sales-to">
+          </div>
+          <button type="button" class="btn btn-primary" id="btn-apply-range">Apply</button>
+        </div>
+
+        <div class="stats-grid" id="sales-summary-stats"></div>
+
+        <div class="sales-layout">
+          <div class="card">
+            <div class="card-header">
+              <h3>Sales by Date</h3>
+              <span class="text-muted" id="sales-range-label"></span>
+            </div>
+            <div class="card-body sales-dates-list" id="sales-dates-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3 id="sales-detail-title">Sales Detail</h3>
+              <span class="text-muted" id="sales-detail-subtitle"></span>
+            </div>
+            <div class="table-wrap" style="border:none;box-shadow:none;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Product</th>
+                    <th>Qty</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="sales-detail-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Product Modal -->
+  <div class="modal-overlay" id="product-modal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="product-modal-title">Add Product</h3>
+        <button class="modal-close" type="button" data-close-modal>&times;</button>
+      </div>
+      <form id="product-form">
+        <input type="hidden" id="product-id">
+        <div class="form-group">
+          <label for="product-name">Product Name *</label>
+          <input type="text" id="product-name" required placeholder="e.g. Caramel Latte">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="product-category">Category</label>
+            <select id="product-category">
+              {% for cat in categories %}
+              <option value="{{ cat }}">{{ cat }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="product-sku">SKU</label>
+            <input type="text" id="product-sku" placeholder="e.g. COF-003">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="product-price">Unit Price (RWF) *</label>
+            <input type="number" id="product-price" min="0" step="100" required>
+          </div>
+          <div class="form-group" id="quantity-group">
+            <label for="product-quantity">Initial Quantity</label>
+            <input type="number" id="product-quantity" min="0" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="product-reorder">Low Stock Alert Level</label>
+          <input type="number" id="product-reorder" min="0" value="10">
+        </div>
+        <div class="form-group">
+          <label for="product-description">Description</label>
+          <textarea id="product-description" rows="2" placeholder="Optional details..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary" id="product-form-submit">Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div class="modal-overlay" id="delete-modal" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Delete Product</h3>
+        <button class="modal-close" type="button" data-close-modal>&times;</button>
+      </div>
+      <div style="padding: 0 1.5rem 1.5rem;">
+        <p>Are you sure you want to delete <strong id="delete-product-name"></strong>? This cannot be undone.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirm-delete" style="background: var(--danger);">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sale Success Modal -->
+  <div class="modal-overlay" id="sale-success-modal" hidden>
+    <div class="modal modal-sm">
+      <div class="sale-success">
+        <div class="success-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <h3>Sale Complete!</h3>
+        <div id="sale-success-details"></div>
+        <button type="button" class="btn btn-primary btn-block" data-close-modal>New Sale</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
