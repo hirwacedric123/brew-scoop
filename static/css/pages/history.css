@@ -1,9 +1,30 @@
 /* pages/history.css */
 
+#view-history .topbar {
+  align-items: center;
+}
+
+#view-history .topbar-heading {
+  gap: 0;
+}
+
+#view-history .topbar h2 {
+  font-size: 2rem;
+  margin: 0;
+}
+
 #view-history .toolbar {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
 }
 
 #view-history .filter-chips {
   flex: 1;
+}
+
+#view-history .table-wrap {
+  transition: box-shadow var(--transition);
+}
+
+#view-history .table-wrap:hover {
+  box-shadow: var(--shadow-hover);
 }
