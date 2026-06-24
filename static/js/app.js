@@ -12,6 +12,7 @@ const state = {
   salesTo: null,
   salesReport: null,
   selectedSalesDate: null,
+  cart: [],
   users: [],
   deleteUserId: null,
   currentUser: window.CURRENT_USER || null,
@@ -339,14 +340,16 @@ async function confirmDelete() {
   }
 }
 
-// ── Sell ───────────────────────────────────────────────────────────────────
+// ── Sell / Cart ────────────────────────────────────────────────────────────
 
 async function loadSellView() {
   try {
     state.products = await api("/api/products");
     populateProductSelects();
     renderQuickPick();
+    syncCartWithStock();
     updateSellPreview();
+    renderCart();
   } catch (e) {
     toast(e.message, "error");
   }
@@ -369,6 +372,24 @@ function populateProductSelects() {
   });
 }
 
+function syncCartWithStock() {
+  state.cart = state.cart.filter((item) => {
+    const product = state.products.find((p) => p.id === item.product_id);
+    if (!product || product.quantity <= 0) return false;
+    if (item.quantity > product.quantity) item.quantity = product.quantity;
+    item.maxStock = product.quantity;
+    item.price = product.price;
+    item.name = product.name;
+    item.category = product.category;
+    return true;
+  });
+}
+
+function cartQtyInCart(productId) {
+  const item = state.cart.find((c) => c.product_id === productId);
+  return item ? item.quantity : 0;
+}
+
 function renderQuickPick() {
   const grid = document.getElementById("quick-pick-grid");
   if (!state.products.length) {
@@ -377,21 +398,20 @@ function renderQuickPick() {
   }
 
   grid.innerHTML = state.products
-    .map(
-      (p) => `
-    <button type="button" class="quick-pick-item ${p.quantity <= 0 ? "out-of-stock" : ""}"
-      ${p.quantity <= 0 ? "disabled" : `onclick="selectQuickPick(${p.id})"`}>
+    .map((p) => {
+      const inCart = cartQtyInCart(p.id);
+      const available = p.quantity - inCart;
+      const disabled = p.quantity <= 0 || available <= 0;
+      return `
+    <button type="button" class="quick-pick-item ${disabled ? "out-of-stock" : ""} ${inCart ? "in-cart" : ""}"
+      ${disabled ? "disabled" : `onclick="addToCart(${p.id}, 1)"`}>
       <strong>${esc(p.name)}</strong>
       <span>${esc(p.category)} · ${p.quantity} left</span>
       <div class="qp-price">${fmt.format(p.price)}</div>
-    </button>`
-    )
+      ${inCart ? `<div class="qp-cart-badge">${inCart} in cart</div>` : ""}
+    </button>`;
+    })
     .join("");
-}
-
-function selectQuickPick(id) {
-  document.getElementById("sell-product").value = id;
-  updateSellPreview();
 }
 
 function updateSellPreview() {
@@ -401,30 +421,21 @@ function updateSellPreview() {
 
   if (!product) {
     preview.hidden = true;
-    document.getElementById("sell-total").textContent = fmt.format(0);
     return;
   }
 
   preview.hidden = false;
   document.getElementById("preview-price").textContent = fmt.format(product.price);
-  document.getElementById("preview-stock").textContent = `${product.quantity} units`;
+  const available = product.quantity - cartQtyInCart(product.id);
+  document.getElementById("preview-stock").textContent =
+    available > 0 ? `${available} available` : "All in cart";
   document.getElementById("preview-category").textContent = product.category;
 
   const qtyInput = document.getElementById("sell-quantity");
-  qtyInput.max = product.quantity;
-  if (parseInt(qtyInput.value, 10) > product.quantity) {
-    qtyInput.value = product.quantity;
+  qtyInput.max = Math.max(available, 1);
+  if (parseInt(qtyInput.value, 10) > available) {
+    qtyInput.value = Math.max(available, 1);
   }
-
-  updateSellTotal();
-}
-
-function updateSellTotal() {
-  const id = parseInt(document.getElementById("sell-product").value, 10);
-  const product = state.products.find((p) => p.id === id);
-  const qty = parseInt(document.getElementById("sell-quantity").value, 10) || 0;
-  const total = product ? product.price * qty : 0;
-  document.getElementById("sell-total").textContent = fmt.format(total);
 }
 
 function adjustQty(delta) {
@@ -433,17 +444,149 @@ function adjustQty(delta) {
   let val = (parseInt(input.value, 10) || 1) + delta;
   val = Math.max(1, Math.min(val, max));
   input.value = val;
-  updateSellTotal();
 }
 
-async function completeSale(e) {
+function addToCart(productId, qty = null) {
+  const product = state.products.find((p) => p.id === productId);
+  if (!product || product.quantity <= 0) {
+    toast("Product out of stock", "error");
+    return;
+  }
+
+  const addQty = qty ?? parseInt(document.getElementById("sell-quantity").value, 10) || 1;
+  const existing = state.cart.find((c) => c.product_id === productId);
+  const currentInCart = existing ? existing.quantity : 0;
+
+  if (currentInCart + addQty > product.quantity) {
+    const remaining = product.quantity - currentInCart;
+    toast(
+      remaining > 0
+        ? `Only ${remaining} more available for ${product.name}`
+        : `${product.name} is fully in the cart`,
+      "error"
+    );
+    return;
+  }
+
+  if (existing) {
+    existing.quantity += addQty;
+  } else {
+    state.cart.push({
+      product_id: productId,
+      name: product.name,
+      category: product.category,
+      price: product.price,
+      quantity: addQty,
+      maxStock: product.quantity,
+    });
+  }
+
+  renderCart();
+  renderQuickPick();
+  updateSellPreview();
+  toast(`Added ${product.name}`);
+}
+
+function updateCartItemQty(productId, quantity) {
+  if (quantity < 1) {
+    removeFromCart(productId);
+    return;
+  }
+
+  const item = state.cart.find((c) => c.product_id === productId);
+  const product = state.products.find((p) => p.id === productId);
+  if (!item || !product) return;
+
+  quantity = Math.min(quantity, product.quantity);
+  item.quantity = quantity;
+  renderCart();
+  renderQuickPick();
+  updateSellPreview();
+}
+
+function removeFromCart(productId) {
+  state.cart = state.cart.filter((c) => c.product_id !== productId);
+  renderCart();
+  renderQuickPick();
+  updateSellPreview();
+}
+
+function clearCart() {
+  state.cart = [];
+  document.getElementById("sell-notes").value = "";
+  document.getElementById("add-to-cart-form").reset();
+  document.getElementById("sell-quantity").value = "1";
+  document.getElementById("sell-preview").hidden = true;
+  renderCart();
+  renderQuickPick();
+}
+
+function getCartTotal() {
+  return state.cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+}
+
+function renderCart() {
+  const empty = document.getElementById("cart-empty");
+  const list = document.getElementById("cart-items");
+  const footer = document.getElementById("cart-footer");
+  const countEl = document.getElementById("cart-item-count");
+  const totalUnits = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  if (!state.cart.length) {
+    empty.hidden = false;
+    list.hidden = true;
+    footer.hidden = true;
+    countEl.textContent = "0 items";
+    return;
+  }
+
+  empty.hidden = true;
+  list.hidden = false;
+  footer.hidden = false;
+  countEl.textContent = `${totalUnits} item${totalUnits !== 1 ? "s" : ""}`;
+  document.getElementById("cart-total").textContent = fmt.format(getCartTotal());
+
+  list.innerHTML = state.cart
+    .map(
+      (item) => `
+    <div class="cart-item">
+      <div class="cart-item-info">
+        <strong>${esc(item.name)}</strong>
+        <span>${esc(item.category)} · ${fmt.format(item.price)} each</span>
+      </div>
+      <div class="cart-item-actions">
+        <div class="qty-input qty-input-sm">
+          <button type="button" class="qty-btn" onclick="updateCartItemQty(${item.product_id}, ${item.quantity - 1})">−</button>
+          <input type="number" value="${item.quantity}" min="1" max="${item.maxStock}"
+            onchange="updateCartItemQty(${item.product_id}, parseInt(this.value, 10) || 1)">
+          <button type="button" class="qty-btn" onclick="updateCartItemQty(${item.product_id}, ${item.quantity + 1})">+</button>
+        </div>
+        <div class="cart-line-total">${fmt.format(item.price * item.quantity)}</div>
+        <button type="button" class="btn-icon danger" title="Remove" onclick="removeFromCart(${item.product_id})">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>`
+    )
+    .join("");
+}
+
+function submitAddToCart(e) {
   e.preventDefault();
   const productId = parseInt(document.getElementById("sell-product").value, 10);
-  const quantity = parseInt(document.getElementById("sell-quantity").value, 10);
-  const notes = document.getElementById("sell-notes").value;
-
   if (!productId) {
     toast("Please select a product", "error");
+    return;
+  }
+  addToCart(productId);
+  document.getElementById("sell-product").value = "";
+  document.getElementById("sell-quantity").value = "1";
+  document.getElementById("sell-preview").hidden = true;
+}
+
+async function completeCheckout() {
+  if (!state.cart.length) {
+    toast("Cart is empty", "error");
     return;
   }
 
@@ -451,28 +594,41 @@ async function completeSale(e) {
   btn.disabled = true;
 
   try {
-    const result = await api("/api/sales", {
+    const result = await api("/api/sales/checkout", {
       method: "POST",
-      body: JSON.stringify({ product_id: productId, quantity, notes }),
+      body: JSON.stringify({
+        items: state.cart.map((c) => ({
+          product_id: c.product_id,
+          quantity: c.quantity,
+        })),
+        notes: document.getElementById("sell-notes").value,
+      }),
     });
 
+    const itemsHtml = result.items
+      .map(
+        (item) => `
+      <div class="checkout-line">
+        <span>${esc(item.product.name)} × ${item.quantity_sold}</span>
+        <strong>${fmt.format(item.total_amount)}</strong>
+      </div>`
+      )
+      .join("");
+
     document.getElementById("sale-success-details").innerHTML = `
-      <p><span>Product</span><strong>${esc(result.product.name)}</strong></p>
-      <p><span>Quantity</span><strong>${result.quantity_sold}</strong></p>
-      <p><span>Total</span><strong>${fmt.format(result.total_amount)}</strong></p>
-      <p><span>Remaining Stock</span><strong>${result.remaining_stock} units</strong></p>
+      <p class="checkout-ref"><span>Reference</span><strong>${esc(result.checkout_ref)}</strong></p>
+      <div class="checkout-lines">${itemsHtml}</div>
+      <p class="checkout-grand-total"><span>Total</span><strong>${fmt.format(result.total_amount)}</strong></p>
+      <p><span>Items</span><strong>${result.total_units} units · ${result.line_count} products</strong></p>
     `;
     showModal("sale-success-modal");
 
-    document.getElementById("sell-form").reset();
-    document.getElementById("sell-quantity").value = "1";
-    document.getElementById("sell-preview").hidden = true;
-    document.getElementById("sell-total").textContent = fmt.format(0);
-
+    clearCart();
     await loadSellView();
     loadDashboard();
   } catch (err) {
     toast(err.message, "error");
+    await loadSellView();
   } finally {
     btn.disabled = false;
   }
@@ -480,10 +636,7 @@ async function completeSale(e) {
 
 function quickSell(id) {
   switchView("sell");
-  setTimeout(() => {
-    document.getElementById("sell-product").value = id;
-    updateSellPreview();
-  }, 100);
+  setTimeout(() => addToCart(id, 1), 100);
 }
 
 // ── Restock ────────────────────────────────────────────────────────────────
@@ -958,10 +1111,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("low-stock-filter").addEventListener("change", loadProducts);
 
   document.getElementById("sell-product").addEventListener("change", updateSellPreview);
-  document.getElementById("sell-quantity").addEventListener("input", updateSellTotal);
   document.getElementById("qty-minus").addEventListener("click", () => adjustQty(-1));
   document.getElementById("qty-plus").addEventListener("click", () => adjustQty(1));
-  document.getElementById("sell-form").addEventListener("submit", completeSale);
+  document.getElementById("add-to-cart-form").addEventListener("submit", submitAddToCart);
+  document.getElementById("btn-complete-sale").addEventListener("click", completeCheckout);
+  document.getElementById("btn-clear-cart").addEventListener("click", clearCart);
 
   document.getElementById("restock-form").addEventListener("submit", submitRestock);
   document.getElementById("adjust-form").addEventListener("submit", submitAdjust);

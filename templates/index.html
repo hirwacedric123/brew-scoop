@@ -178,58 +178,80 @@
         <header class="topbar">
           <div>
             <h2>Point of Sale</h2>
-            <p>Record a sale — stock updates automatically</p>
+            <p>Add items to the cart, then complete checkout in one step</p>
           </div>
         </header>
 
         <div class="sell-layout">
-          <div class="card sell-form-card">
-            <div class="card-header"><h3>New Sale</h3></div>
-            <div class="card-body">
-              <form id="sell-form">
-                <div class="form-group">
-                  <label for="sell-product">Select Product</label>
-                  <select id="sell-product" required>
-                    <option value="">Choose a product...</option>
-                  </select>
-                </div>
+          <div class="sell-main">
+            <div class="card">
+              <div class="card-header">
+                <h3>Quick Pick</h3>
+                <span class="text-muted">Tap to add to cart</span>
+              </div>
+              <div class="card-body">
+                <div class="quick-pick-grid" id="quick-pick-grid"></div>
+              </div>
+            </div>
 
-                <div class="product-preview" id="sell-preview" hidden>
-                  <div class="preview-row"><span>Unit Price</span><strong id="preview-price">—</strong></div>
-                  <div class="preview-row"><span>Available</span><strong id="preview-stock">—</strong></div>
-                  <div class="preview-row"><span>Category</span><strong id="preview-category">—</strong></div>
-                </div>
-
-                <div class="form-group">
-                  <label>Quantity</label>
-                  <div class="qty-input">
-                    <button type="button" class="qty-btn" id="qty-minus">−</button>
-                    <input type="number" id="sell-quantity" value="1" min="1" required>
-                    <button type="button" class="qty-btn" id="qty-plus">+</button>
+            <div class="card">
+              <div class="card-header"><h3>Add Item</h3></div>
+              <div class="card-body">
+                <form id="add-to-cart-form">
+                  <div class="form-group">
+                    <label for="sell-product">Product</label>
+                    <select id="sell-product">
+                      <option value="">Choose a product...</option>
+                    </select>
                   </div>
-                </div>
 
-                <div class="total-display">
-                  <span>Total</span>
-                  <strong id="sell-total">RWF 0</strong>
-                </div>
+                  <div class="product-preview" id="sell-preview" hidden>
+                    <div class="preview-row"><span>Unit Price</span><strong id="preview-price">—</strong></div>
+                    <div class="preview-row"><span>Available</span><strong id="preview-stock">—</strong></div>
+                    <div class="preview-row"><span>Category</span><strong id="preview-category">—</strong></div>
+                  </div>
 
-                <div class="form-group">
-                  <label for="sell-notes">Notes (optional)</label>
-                  <input type="text" id="sell-notes" placeholder="Customer name, order ref...">
-                </div>
+                  <div class="form-group">
+                    <label>Quantity</label>
+                    <div class="qty-input">
+                      <button type="button" class="qty-btn" id="qty-minus">−</button>
+                      <input type="number" id="sell-quantity" value="1" min="1">
+                      <button type="button" class="qty-btn" id="qty-plus">+</button>
+                    </div>
+                  </div>
 
-                <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-complete-sale">
-                  Complete Sale
-                </button>
-              </form>
+                  <button type="submit" class="btn btn-ghost btn-block" id="btn-add-to-cart">
+                    Add to Cart
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
 
-          <div class="card">
-            <div class="card-header"><h3>Quick Pick</h3></div>
-            <div class="card-body">
-              <div class="quick-pick-grid" id="quick-pick-grid"></div>
+          <div class="card cart-card">
+            <div class="card-header">
+              <h3>Cart</h3>
+              <span class="text-muted" id="cart-item-count">0 items</span>
+            </div>
+            <div class="card-body cart-body">
+              <div class="empty-state" id="cart-empty">Cart is empty — pick products to get started</div>
+              <div id="cart-items" class="cart-items" hidden></div>
+            </div>
+            <div class="cart-footer" id="cart-footer" hidden>
+              <div class="total-display">
+                <span>Total</span>
+                <strong id="cart-total">RWF 0</strong>
+              </div>
+              <div class="form-group">
+                <label for="sell-notes">Notes (optional)</label>
+                <input type="text" id="sell-notes" placeholder="Customer name, order ref...">
+              </div>
+              <button type="button" class="btn btn-primary btn-lg btn-block" id="btn-complete-sale">
+                Complete Checkout
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm btn-block" id="btn-clear-cart">
+                Clear Cart
+              </button>
             </div>
           </div>
         </div>
@@ -552,12 +574,12 @@
 
   <!-- Sale Success Modal -->
   <div class="modal-overlay" id="sale-success-modal" hidden>
-    <div class="modal modal-sm">
+    <div class="modal">
       <div class="sale-success">
         <div class="success-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
         </div>
-        <h3>Sale Complete!</h3>
+        <h3>Checkout Complete!</h3>
         <div id="sale-success-details"></div>
         <button type="button" class="btn btn-primary btn-block" data-close-modal>New Sale</button>
       </div>

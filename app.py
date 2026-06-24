@@ -2,6 +2,7 @@
 
 import os
 import re
+import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
@@ -94,10 +95,20 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
         """
     )
+    _migrate_db(db)
     init_users_table(db)
     _seed_default_admin(db)
     db.commit()
     db.close()
+
+
+def _migrate_db(db):
+    cols = {row[1] for row in db.execute("PRAGMA table_info(transactions)").fetchall()}
+    if "checkout_ref" not in cols:
+        db.execute("ALTER TABLE transactions ADD COLUMN checkout_ref TEXT")
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transactions_checkout ON transactions(checkout_ref)"
+    )
 
 
 def _seed_default_admin(db):
@@ -186,6 +197,7 @@ def row_to_transaction(row):
         "unit_price": round(row["unit_price"], 2),
         "total_amount": round(row["total_amount"], 2),
         "notes": row["notes"] or "",
+        "checkout_ref": row["checkout_ref"] or "",
         "created_at": row["created_at"],
         "sale_date": row["created_at"][:10],
     }
@@ -549,6 +561,115 @@ def _validate_product(data, partial=False):
 
 # ── Sales & Stock API ──────────────────────────────────────────────────────
 
+def _normalize_checkout_items(raw_items):
+    if not isinstance(raw_items, list) or not raw_items:
+        return None, "Cart is empty"
+
+    merged = {}
+    for item in raw_items:
+        try:
+            product_id = int(item.get("product_id"))
+            quantity = int(item.get("quantity"))
+        except (TypeError, ValueError):
+            return None, "Invalid item in cart"
+        if quantity <= 0:
+            return None, "Quantity must be greater than zero"
+        merged[product_id] = merged.get(product_id, 0) + quantity
+
+    return [{"product_id": pid, "quantity": qty} for pid, qty in merged.items()], None
+
+
+def _execute_checkout(db, items, notes=None):
+    checkout_ref = (
+        f"CHK-{now_kigali().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
+    )
+    ts = now_iso()
+    notes_text = (notes or "").strip() or None
+
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        product_ids = [item["product_id"] for item in items]
+        placeholders = ",".join("?" * len(product_ids))
+        rows = db.execute(
+            f"SELECT * FROM products WHERE id IN ({placeholders})",
+            product_ids,
+        ).fetchall()
+        products = {row["id"]: row for row in rows}
+
+        for item in items:
+            product_id = item["product_id"]
+            quantity = item["quantity"]
+            row = products.get(product_id)
+            if row is None:
+                db.rollback()
+                return None, "Product not found", 404
+            if row["quantity"] < quantity:
+                db.rollback()
+                return None, (
+                    f"Insufficient stock for {row['name']}. "
+                    f"Only {row['quantity']} available."
+                ), 400
+
+        result_items = []
+        total_amount = 0.0
+        total_units = 0
+
+        for item in items:
+            product_id = item["product_id"]
+            quantity = item["quantity"]
+            row = products[product_id]
+            unit_price = float(row["price"])
+            line_total = round(unit_price * quantity, 2)
+            new_qty = row["quantity"] - quantity
+
+            db.execute(
+                "UPDATE products SET quantity=?, updated_at=? WHERE id=?",
+                (new_qty, ts, product_id),
+            )
+            cur = db.execute(
+                """INSERT INTO transactions
+                   (product_id, type, quantity, unit_price, total_amount,
+                    notes, created_at, checkout_ref)
+                   VALUES (?, 'sale', ?, ?, ?, ?, ?, ?)""",
+                (
+                    product_id,
+                    quantity,
+                    unit_price,
+                    line_total,
+                    notes_text,
+                    ts,
+                    checkout_ref,
+                ),
+            )
+
+            updated = db.execute(
+                "SELECT * FROM products WHERE id = ?", (product_id,)
+            ).fetchone()
+            result_items.append({
+                "transaction_id": cur.lastrowid,
+                "product": row_to_product(updated),
+                "quantity_sold": quantity,
+                "unit_price": unit_price,
+                "total_amount": line_total,
+                "remaining_stock": new_qty,
+            })
+            total_amount += line_total
+            total_units += quantity
+            products[product_id] = updated
+
+        db.commit()
+        return {
+            "checkout_ref": checkout_ref,
+            "items": result_items,
+            "total_amount": round(total_amount, 2),
+            "total_units": total_units,
+            "line_count": len(result_items),
+        }, None, 201
+    except Exception:
+        db.rollback()
+        raise
+
+
 @app.route("/api/sales", methods=["POST"])
 @login_required
 def create_sale():
@@ -563,40 +684,42 @@ def create_sale():
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid quantity"}), 400
 
-    db = get_db()
-    row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    if not row:
-        return jsonify({"error": "Product not found"}), 404
-    if row["quantity"] < quantity:
-        return jsonify({
-            "error": f"Insufficient stock. Only {row['quantity']} available."
-        }), 400
-
-    ts = now_iso()
-    unit_price = float(row["price"])
-    total = round(unit_price * quantity, 2)
-    new_qty = row["quantity"] - quantity
-
-    db.execute("UPDATE products SET quantity=?, updated_at=? WHERE id=?",
-               (new_qty, ts, product_id))
-    cur = db.execute(
-        """INSERT INTO transactions
-           (product_id, type, quantity, unit_price, total_amount, notes, created_at)
-           VALUES (?, 'sale', ?, ?, ?, ?, ?)""",
-        (product_id, quantity, unit_price, total,
-         (data.get("notes") or "").strip() or None, ts),
+    items, error = _normalize_checkout_items(
+        [{"product_id": product_id, "quantity": quantity}]
     )
-    db.commit()
+    if error:
+        return jsonify({"error": error}), 400
 
-    updated = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+    db = get_db()
+    result, error, status = _execute_checkout(db, items, data.get("notes"))
+    if error:
+        return jsonify({"error": error}), status
+
+    item = result["items"][0]
     return jsonify({
-        "transaction_id": cur.lastrowid,
-        "product": row_to_product(updated),
-        "quantity_sold": quantity,
-        "unit_price": unit_price,
-        "total_amount": total,
-        "remaining_stock": new_qty,
-    }), 201
+        "transaction_id": item["transaction_id"],
+        "checkout_ref": result["checkout_ref"],
+        "product": item["product"],
+        "quantity_sold": item["quantity_sold"],
+        "unit_price": item["unit_price"],
+        "total_amount": item["total_amount"],
+        "remaining_stock": item["remaining_stock"],
+    }), status
+
+
+@app.route("/api/sales/checkout", methods=["POST"])
+@login_required
+def checkout_sale():
+    data = request.get_json(silent=True) or {}
+    items, error = _normalize_checkout_items(data.get("items"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    db = get_db()
+    result, error, status = _execute_checkout(db, items, data.get("notes"))
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), status
 
 
 @app.route("/api/restock", methods=["POST"])

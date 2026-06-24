@@ -679,9 +679,138 @@ select {
 /* Sell layout */
 .sell-layout {
   display: grid;
-  grid-template-columns: 1fr 1.2fr;
+  grid-template-columns: 1fr 380px;
   gap: 1.25rem;
   align-items: start;
+}
+
+.sell-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.cart-card {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 2rem);
+}
+
+.cart-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+}
+
+.cart-footer {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.cart-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cart-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  background: var(--foam);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cart-item-info strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.cart-item-info span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.cart-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.cart-line-total {
+  flex: 1;
+  text-align: right;
+  font-weight: 700;
+  color: var(--coffee);
+  font-size: 0.9rem;
+}
+
+.qty-input-sm {
+  width: auto;
+}
+
+.qty-input-sm .qty-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
+}
+
+.qty-input-sm input {
+  width: 42px;
+  font-size: 0.9rem;
+  padding: 0.35rem;
+}
+
+.quick-pick-item.in-cart {
+  border-color: var(--caramel);
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.qp-cart-badge {
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--coffee);
+  background: var(--latte);
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.checkout-lines {
+  margin: 0.75rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+}
+
+.checkout-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  font-size: 0.88rem;
+}
+
+.checkout-line strong {
+  white-space: nowrap;
+}
+
+.checkout-ref,
+.checkout-grand-total {
+  font-weight: 600;
+}
+
+.checkout-grand-total strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--coffee);
 }
 
 .sell-form-card {
@@ -1186,6 +1315,11 @@ select {
 
   .sell-layout {
     grid-template-columns: 1fr;
+  }
+
+  .cart-card {
+    position: static;
+    max-height: none;
   }
 }
 
