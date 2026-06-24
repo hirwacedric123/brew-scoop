@@ -27,6 +27,10 @@
   display: none;
 }
 
+.sidebar-overlay[hidden] {
+  display: none;
+}
+
 .topbar-actions {
   display: flex;
   gap: 0.5rem;

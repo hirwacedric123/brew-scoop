@@ -33,7 +33,7 @@
     transform: translateX(0);
   }
 
-  .sidebar-overlay {
+  .sidebar-overlay:not([hidden]) {
     display: block;
     position: fixed;
     inset: 0;
