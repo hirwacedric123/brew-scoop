@@ -33,7 +33,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 KIGALI_OFFSET = timedelta(hours=2)
 
-CATEGORIES = [
+DEFAULT_CATEGORIES = [
     "Coffee",
     "Tea",
     "Juice",
@@ -96,6 +96,8 @@ def init_db():
         """
     )
     _migrate_db(db)
+    _init_categories_table(db)
+    _seed_categories(db)
     init_users_table(db)
     _seed_default_admin(db)
     db.commit()
@@ -109,6 +111,51 @@ def _migrate_db(db):
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_transactions_checkout ON transactions(checkout_ref)"
     )
+
+
+def _init_categories_table(db):
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_categories_sort ON categories(sort_order);
+        """
+    )
+
+
+def _seed_categories(db):
+    count = db.execute("SELECT COUNT(*) AS n FROM categories").fetchone()["n"]
+    if count > 0:
+        return
+
+    ts = now_iso()
+    for index, name in enumerate(DEFAULT_CATEGORIES):
+        db.execute(
+            "INSERT INTO categories (name, sort_order, created_at) VALUES (?, ?, ?)",
+            (name, index, ts),
+        )
+
+
+def get_category_names(db):
+    rows = db.execute(
+        "SELECT name FROM categories ORDER BY sort_order ASC, name COLLATE NOCASE ASC"
+    ).fetchall()
+    return [row["name"] for row in rows]
+
+
+def row_to_category(row):
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "sort_order": row["sort_order"],
+        "product_count": row["product_count"],
+        "created_at": row["created_at"],
+    }
 
 
 def _seed_default_admin(db):
@@ -261,7 +308,6 @@ def index():
     user = get_current_user(get_db())
     return render_template(
         "index.html",
-        categories=CATEGORIES,
         current_user=public_user(user),
     )
 
@@ -554,8 +600,8 @@ def _validate_product(data, partial=False):
         except (TypeError, ValueError):
             return "Invalid reorder level"
     cat = data.get("category", "Other")
-    if cat not in CATEGORIES:
-        return f"Invalid category. Choose from: {', '.join(CATEGORIES)}"
+    if cat not in get_category_names(get_db()):
+        return "Invalid category"
     return None
 
 
@@ -1021,7 +1067,111 @@ def dashboard_stats():
 @app.route("/api/categories", methods=["GET"])
 @login_required
 def list_categories():
-    return jsonify(CATEGORIES)
+    rows = get_db().execute(
+        """SELECT c.id, c.name, c.sort_order, c.created_at,
+                  COUNT(p.id) AS product_count
+           FROM categories c
+           LEFT JOIN products p ON p.category = c.name
+           GROUP BY c.id
+           ORDER BY c.sort_order ASC, c.name COLLATE NOCASE ASC"""
+    ).fetchall()
+    return jsonify([row_to_category(r) for r in rows])
+
+
+@app.route("/api/admin/categories", methods=["POST"])
+@admin_required
+def admin_create_category():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Category name is required"}), 400
+    if len(name) > 60:
+        return jsonify({"error": "Category name is too long"}), 400
+
+    db = get_db()
+    existing = db.execute(
+        "SELECT id FROM categories WHERE name = ? COLLATE NOCASE", (name,)
+    ).fetchone()
+    if existing:
+        return jsonify({"error": "Category already exists"}), 409
+
+    max_order = db.execute("SELECT COALESCE(MAX(sort_order), -1) AS n FROM categories").fetchone()["n"]
+    ts = now_iso()
+    cur = db.execute(
+        "INSERT INTO categories (name, sort_order, created_at) VALUES (?, ?, ?)",
+        (name, max_order + 1, ts),
+    )
+    db.commit()
+    row = db.execute(
+        """SELECT c.id, c.name, c.sort_order, c.created_at, 0 AS product_count
+           FROM categories c WHERE c.id = ?""",
+        (cur.lastrowid,),
+    ).fetchone()
+    return jsonify(row_to_category(row)), 201
+
+
+@app.route("/api/admin/categories/<int:category_id>", methods=["PUT"])
+@admin_required
+def admin_update_category(category_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM categories WHERE id = ?", (category_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Category not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Category name is required"}), 400
+    if len(name) > 60:
+        return jsonify({"error": "Category name is too long"}), 400
+
+    duplicate = db.execute(
+        "SELECT id FROM categories WHERE name = ? COLLATE NOCASE AND id != ?",
+        (name, category_id),
+    ).fetchone()
+    if duplicate:
+        return jsonify({"error": "Category already exists"}), 409
+
+    old_name = row["name"]
+    if name != old_name:
+        db.execute("UPDATE products SET category = ? WHERE category = ?", (name, old_name))
+    db.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
+    db.commit()
+
+    updated = db.execute(
+        """SELECT c.id, c.name, c.sort_order, c.created_at,
+                  COUNT(p.id) AS product_count
+           FROM categories c
+           LEFT JOIN products p ON p.category = c.name
+           WHERE c.id = ?
+           GROUP BY c.id""",
+        (category_id,),
+    ).fetchone()
+    return jsonify(row_to_category(updated))
+
+
+@app.route("/api/admin/categories/<int:category_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_category(category_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM categories WHERE id = ?", (category_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "Category not found"}), 404
+
+    product_count = db.execute(
+        "SELECT COUNT(*) AS n FROM products WHERE category = ?", (row["name"],)
+    ).fetchone()["n"]
+    if product_count > 0:
+        return jsonify({
+            "error": f"Cannot delete — {product_count} product(s) use this category"
+        }), 400
+
+    if row["name"].lower() == "other":
+        return jsonify({"error": "The Other category cannot be deleted"}), 400
+
+    db.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+    db.commit()
+    return jsonify({"message": "Category deleted"})
 
 
 with app.app_context():

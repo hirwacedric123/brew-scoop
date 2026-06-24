@@ -4,6 +4,7 @@
 
 const state = {
   products: [],
+  categories: [],
   dashboard: null,
   selectedProductId: null,
   deleteProductId: null,
@@ -13,9 +14,21 @@ const state = {
   salesReport: null,
   selectedSalesDate: null,
   cart: [],
+  posMode: false,
   users: [],
   deleteUserId: null,
+  deleteCategoryId: null,
   currentUser: window.CURRENT_USER || null,
+};
+
+const VIEW_TITLES = {
+  dashboard: "Dashboard",
+  products: "Products",
+  sell: "Point of Sale",
+  restock: "Restock",
+  history: "History",
+  sales: "Sales Reports",
+  admin: "Administration",
 };
 
 const fmt = new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 });
@@ -52,17 +65,46 @@ function toast(message, type = "success") {
 // ── Navigation ─────────────────────────────────────────────────────────────
 
 function initNavigation() {
-  document.querySelectorAll(".nav-item[data-view], [data-view].btn").forEach((btn) => {
+  document.querySelectorAll(".nav-item[data-view], .bottom-nav-item[data-view], [data-view].btn").forEach((btn) => {
     btn.addEventListener("click", () => switchView(btn.dataset.view));
   });
+
+  document.getElementById("btn-menu-toggle")?.addEventListener("click", openMobileNav);
+  document.getElementById("btn-more-nav")?.addEventListener("click", openMobileNav);
+  document.getElementById("sidebar-overlay")?.addEventListener("click", closeMobileNav);
+
+  document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
+    btn.addEventListener("click", closeMobileNav);
+  });
+
+  document.querySelectorAll(".admin-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchAdminTab(btn.dataset.adminTab));
+  });
+}
+
+function openMobileNav() {
+  document.getElementById("sidebar")?.classList.add("open");
+  document.getElementById("sidebar-overlay")?.removeAttribute("hidden");
+}
+
+function closeMobileNav() {
+  document.getElementById("sidebar")?.classList.remove("open");
+  document.getElementById("sidebar-overlay")?.setAttribute("hidden", "");
 }
 
 function switchView(viewId) {
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+  document.querySelectorAll(".bottom-nav-item[data-view]").forEach((n) => n.classList.remove("active"));
 
   document.getElementById(`view-${viewId}`)?.classList.add("active");
   document.querySelector(`.nav-item[data-view="${viewId}"]`)?.classList.add("active");
+  document.querySelector(`.bottom-nav-item[data-view="${viewId}"]`)?.classList.add("active");
+
+  const mobileTitle = document.getElementById("mobile-view-title");
+  if (mobileTitle) mobileTitle.textContent = VIEW_TITLES[viewId] || "Brew & Scoop";
+
+  closeMobileNav();
 
   if (viewId === "dashboard") loadDashboard();
   if (viewId === "products") loadProducts();
@@ -70,12 +112,92 @@ function switchView(viewId) {
   if (viewId === "restock") loadRestockView();
   if (viewId === "history") loadHistory();
   if (viewId === "sales") loadSalesReports();
-  if (viewId === "admin") loadUsers();
+  if (viewId === "admin") loadAdminView();
+}
+
+function switchAdminTab(tabId) {
+  document.querySelectorAll(".admin-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.adminTab === tabId);
+  });
+  document.getElementById("admin-panel-team").hidden = tabId !== "team";
+  document.getElementById("admin-panel-categories").hidden = tabId !== "categories";
+
+  if (tabId === "team") loadUsers();
+  if (tabId === "categories") loadCategoriesAdmin();
+}
+
+function loadAdminView() {
+  if (!state.currentUser || state.currentUser.role !== "admin") return;
+  const activeTab = document.querySelector(".admin-tab.active")?.dataset.adminTab || "team";
+  switchAdminTab(activeTab);
+}
+
+// ── Skeleton loaders ───────────────────────────────────────────────────────
+
+function showTableSkeleton(tbodyId, colCount, rowCount = 5) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  tbody.innerHTML = Array(rowCount)
+    .fill(0)
+    .map(
+      () => `
+    <tr class="skeleton-row">
+      ${Array(colCount).fill('<td><div class="skeleton skeleton-text"></div></td>').join("")}
+    </tr>`
+    )
+    .join("");
+}
+
+function showDashboardSkeleton() {
+  document.getElementById("dashboard-stats").innerHTML = Array(5)
+    .fill(0)
+    .map(
+      () => `
+    <div class="stat-card skeleton-stat">
+      <div class="skeleton skeleton-text sm"></div>
+      <div class="skeleton skeleton-text lg"></div>
+      <div class="skeleton skeleton-text sm"></div>
+    </div>`
+    )
+    .join("");
+}
+
+// ── Categories ─────────────────────────────────────────────────────────────
+
+async function loadCategories() {
+  try {
+    state.categories = await api("/api/categories");
+    populateCategorySelects();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function populateCategorySelects() {
+  const names = state.categories.map((c) => c.name);
+
+  const filter = document.getElementById("product-category-filter");
+  if (filter) {
+    const current = filter.value;
+    filter.innerHTML =
+      '<option value="">All Categories</option>' +
+      names.map((n) => `<option value="${escAttr(n)}">${esc(n)}</option>`).join("");
+    if (names.includes(current)) filter.value = current;
+  }
+
+  const productCat = document.getElementById("product-category");
+  if (productCat) {
+    const current = productCat.value;
+    productCat.innerHTML = names.map((n) => `<option value="${escAttr(n)}">${esc(n)}</option>`).join("");
+    if (names.includes(current)) productCat.value = current;
+    else if (names.includes("Other")) productCat.value = "Other";
+  }
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
 async function loadDashboard() {
+  showDashboardSkeleton();
   try {
     state.dashboard = await api("/api/dashboard");
     renderDashboard(state.dashboard);
@@ -211,6 +333,8 @@ async function loadProducts() {
   if (search) params.set("search", search);
   if (category) params.set("category", category);
   if (lowStock) params.set("low_stock", "1");
+
+  showTableSkeleton("products-table-body", 6);
 
   try {
     state.products = await api(`/api/products?${params}`);
@@ -350,9 +474,88 @@ async function loadSellView() {
     syncCartWithStock();
     updateSellPreview();
     renderCart();
+    if (state.posMode) focusBarcodeInput();
   } catch (e) {
     toast(e.message, "error");
   }
+}
+
+function togglePosMode() {
+  state.posMode = !state.posMode;
+  const sellView = document.getElementById("view-sell");
+  const btn = document.getElementById("btn-pos-mode");
+  const posBar = document.getElementById("pos-bar");
+  const subtitle = document.getElementById("sell-subtitle");
+
+  sellView?.classList.toggle("pos-mode", state.posMode);
+  btn?.classList.toggle("active", state.posMode);
+  if (posBar) posBar.hidden = !state.posMode;
+  if (subtitle) {
+    subtitle.textContent = state.posMode
+      ? "Counter mode — scan SKUs, use shortcuts for fast checkout"
+      : "Add items to the cart, then complete checkout in one step";
+  }
+  if (state.posMode) focusBarcodeInput();
+}
+
+function focusBarcodeInput() {
+  const input = document.getElementById("pos-barcode-input");
+  if (input && document.getElementById("view-sell")?.classList.contains("active")) {
+    input.focus();
+    input.select();
+  }
+}
+
+function handleBarcodeScan() {
+  const input = document.getElementById("pos-barcode-input");
+  const code = input?.value.trim();
+  if (!code) return;
+
+  const product = state.products.find(
+    (p) => p.sku && p.sku.toLowerCase() === code.toLowerCase()
+  );
+
+  if (!product) {
+    toast(`No product found for SKU: ${code}`, "error");
+    input.select();
+    return;
+  }
+
+  addToCart(product.id, 1);
+  input.value = "";
+  input.focus();
+}
+
+function initPosShortcuts() {
+  document.addEventListener("keydown", (e) => {
+    if (!document.getElementById("view-sell")?.classList.contains("active")) return;
+
+    if (e.key === "F2") {
+      e.preventDefault();
+      if (!state.posMode) togglePosMode();
+      else focusBarcodeInput();
+      return;
+    }
+
+    if (e.key === "Escape" && state.cart.length) {
+      e.preventDefault();
+      clearCart();
+      return;
+    }
+
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      if (document.activeElement?.tagName === "TEXTAREA") return;
+      e.preventDefault();
+      if (state.cart.length) completeCheckout();
+    }
+  });
+
+  document.getElementById("pos-barcode-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleBarcodeScan();
+    }
+  });
 }
 
 function populateProductSelects() {
@@ -453,7 +656,7 @@ function addToCart(productId, qty = null) {
     return;
   }
 
-  const addQty = qty ?? parseInt(document.getElementById("sell-quantity").value, 10) || 1;
+  const addQty = qty ?? (parseInt(document.getElementById("sell-quantity").value, 10) || 1);
   const existing = state.cart.find((c) => c.product_id === productId);
   const currentInCart = existing ? existing.quantity : 0;
 
@@ -664,7 +867,7 @@ async function submitRestock(e) {
     toast(`Restocked ${result.name} — now ${result.quantity} units`);
     document.getElementById("restock-form").reset();
     document.getElementById("restock-quantity").value = "10";
-    loadRestockView();
+    switchView("products");
   } catch (err) {
     toast(err.message, "error");
   }
@@ -895,6 +1098,8 @@ function selectSalesDate(date) {
 async function loadUsers() {
   if (!state.currentUser || state.currentUser.role !== "admin") return;
 
+  showTableSkeleton("users-table-body", 5, 4);
+
   try {
     state.users = await api("/api/admin/users");
     renderUsersTable(state.users);
@@ -1023,6 +1228,113 @@ async function confirmDeleteUser() {
   }
 }
 
+// ── Admin: Category Management ─────────────────────────────────────────────
+
+async function loadCategoriesAdmin() {
+  if (!state.currentUser || state.currentUser.role !== "admin") return;
+
+  showTableSkeleton("categories-table-body", 3, 4);
+
+  try {
+    state.categories = await api("/api/categories");
+    renderCategoriesTable(state.categories);
+    populateCategorySelects();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function renderCategoriesTable(categories) {
+  const tbody = document.getElementById("categories-table-body");
+  if (!tbody) return;
+
+  if (!categories.length) {
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-state">No categories yet</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = categories
+    .map((c) => {
+      const isOther = c.name.toLowerCase() === "other";
+      return `
+    <tr>
+      <td><strong>${esc(c.name)}</strong></td>
+      <td>${fmtNum.format(c.product_count)}</td>
+      <td>
+        <div class="action-group">
+          <button class="btn-icon" title="Edit" onclick="openEditCategory(${c.id})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          ${
+            isOther
+              ? ""
+              : `<button class="btn-icon danger" title="Delete" onclick="openDeleteCategory(${c.id}, '${escAttr(c.name)}')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>`
+          }
+        </div>
+      </td>
+    </tr>`;
+    })
+    .join("");
+}
+
+function openAddCategory() {
+  document.getElementById("category-modal-title").textContent = "Add Category";
+  document.getElementById("category-form").reset();
+  document.getElementById("category-id").value = "";
+  showModal("category-modal");
+}
+
+function openEditCategory(id) {
+  const category = state.categories.find((c) => c.id === id);
+  if (!category) return;
+
+  document.getElementById("category-modal-title").textContent = "Edit Category";
+  document.getElementById("category-id").value = category.id;
+  document.getElementById("category-name").value = category.name;
+  showModal("category-modal");
+}
+
+function openDeleteCategory(id, name) {
+  state.deleteCategoryId = id;
+  document.getElementById("delete-category-name").textContent = name;
+  showModal("delete-category-modal");
+}
+
+async function saveCategory(e) {
+  e.preventDefault();
+  const id = document.getElementById("category-id").value;
+  const payload = { name: document.getElementById("category-name").value.trim() };
+
+  try {
+    if (id) {
+      await api(`/api/admin/categories/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+      toast("Category updated");
+    } else {
+      await api("/api/admin/categories", { method: "POST", body: JSON.stringify(payload) });
+      toast("Category added");
+    }
+    hideModal("category-modal");
+    await loadCategoriesAdmin();
+    await loadCategories();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function confirmDeleteCategory() {
+  try {
+    await api(`/api/admin/categories/${state.deleteCategoryId}`, { method: "DELETE" });
+    toast("Category deleted");
+    hideModal("delete-category-modal");
+    await loadCategoriesAdmin();
+    await loadCategories();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
 async function logout() {
   try {
     await api("/api/auth/logout", { method: "POST" });
@@ -1101,14 +1413,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initNavigation();
   initSalesReports();
+  initPosShortcuts();
+
+  loadCategories().then(() => loadDashboard());
 
   document.getElementById("btn-add-product").addEventListener("click", openAddProduct);
   document.getElementById("product-form").addEventListener("submit", saveProduct);
   document.getElementById("confirm-delete").addEventListener("click", confirmDelete);
 
-  document.getElementById("product-search").addEventListener("input", debounce(loadProducts, 300));
+  const debouncedLoadProducts = debounce(loadProducts, 300);
+  document.getElementById("product-search").addEventListener("input", () => {
+    showTableSkeleton("products-table-body", 6);
+    debouncedLoadProducts();
+  });
   document.getElementById("product-category-filter").addEventListener("change", loadProducts);
   document.getElementById("low-stock-filter").addEventListener("change", loadProducts);
+
+  document.getElementById("btn-pos-mode")?.addEventListener("click", togglePosMode);
 
   document.getElementById("sell-product").addEventListener("change", updateSellPreview);
   document.getElementById("qty-minus").addEventListener("click", () => adjustQty(-1));
@@ -1126,6 +1447,9 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-add-user")?.addEventListener("click", openAddUser);
   document.getElementById("user-form")?.addEventListener("submit", saveUser);
   document.getElementById("confirm-delete-user")?.addEventListener("click", confirmDeleteUser);
+  document.getElementById("btn-add-category")?.addEventListener("click", openAddCategory);
+  document.getElementById("category-form")?.addEventListener("submit", saveCategory);
+  document.getElementById("confirm-delete-category")?.addEventListener("click", confirmDeleteCategory);
 
   document.querySelectorAll("[data-close-modal]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1138,8 +1462,6 @@ document.addEventListener("DOMContentLoaded", () => {
       if (e.target === overlay) overlay.hidden = true;
     });
   });
-
-  loadDashboard();
 });
 
 function debounce(fn, ms) {
@@ -1154,7 +1476,11 @@ function debounce(fn, ms) {
 window.openEditProduct = openEditProduct;
 window.openDeleteProduct = openDeleteProduct;
 window.quickSell = quickSell;
-window.selectQuickPick = selectQuickPick;
+window.addToCart = addToCart;
+window.updateCartItemQty = updateCartItemQty;
+window.removeFromCart = removeFromCart;
 window.selectSalesDate = selectSalesDate;
 window.openEditUser = openEditUser;
 window.openDeleteUser = openDeleteUser;
+window.openEditCategory = openEditCategory;
+window.openDeleteCategory = openDeleteCategory;
