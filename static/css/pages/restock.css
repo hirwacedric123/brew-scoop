@@ -1,9 +1,322 @@
 /* pages/restock.css */
 
-#view-restock .sell-layout {
-  max-width: 960px;
+/* ── Header ───────────────────────────────────────────────────────────────── */
+
+#view-restock .restock-topbar {
+  margin-bottom: 1.75rem;
+  align-items: center;
 }
 
-#view-restock .card {
+#view-restock .topbar-heading {
+  gap: 0;
+}
+
+.restock-eyebrow,
+.page-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.25rem;
+}
+
+#view-restock .topbar h2 {
+  font-size: 2rem;
+  margin: 0;
+  line-height: 1.15;
+}
+
+.restock-topbar-end {
+  flex-shrink: 0;
+}
+
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+
+.restock-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.restock-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.restock-card {
+  box-shadow: 0 1px 3px rgba(44, 24, 16, 0.04), 0 4px 16px rgba(44, 24, 16, 0.05);
   height: 100%;
+}
+
+.restock-card-add {
+  border-top: 3px solid var(--mint);
+}
+
+.restock-card-adjust {
+  border-top: 3px solid var(--caramel);
+}
+
+#view-restock .card-header {
+  padding: 1.15rem 1.35rem;
+  background: white;
+  border-bottom: 1px solid rgba(232, 221, 208, 0.7);
+}
+
+#view-restock .card-header h3 {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.restock-card-desc {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 0.15rem;
+}
+
+#view-restock .card-body {
+  padding: 1.25rem 1.35rem 1.5rem;
+}
+
+/* ── Product preview ────────────────────────────────────────────────────── */
+
+.restock-preview {
+  background: var(--foam);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  margin-bottom: 1.15rem;
+}
+
+.restock-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.restock-preview-header strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.restock-preview-header span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.restock-preview-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.restock-stat {
+  flex: 1;
+  text-align: center;
+}
+
+.restock-stat span {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.restock-stat strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--coffee);
+}
+
+.restock-stat-new strong {
+  color: var(--mint);
+}
+
+.restock-stat-arrow {
+  flex: 0;
+  color: var(--caramel);
+  font-size: 1.1rem;
+  font-weight: 300;
+}
+
+.adjust-delta {
+  margin-top: 0.65rem;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+}
+
+.adjust-delta.positive {
+  background: #eef5f0;
+  color: var(--success);
+}
+
+.adjust-delta.negative {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.adjust-delta.neutral {
+  background: var(--foam);
+  color: var(--text-muted);
+}
+
+/* ── Quantity presets ─────────────────────────────────────────────────────── */
+
+.qty-presets {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.qty-preset {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: white;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.qty-preset:hover {
+  border-color: var(--mint);
+  color: var(--mint);
+  background: #eef5f0;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+
+.restock-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.restock-sidebar-card {
+  box-shadow: 0 1px 3px rgba(44, 24, 16, 0.04), 0 4px 16px rgba(44, 24, 16, 0.05);
+  border-top: 3px solid var(--danger);
+}
+
+.restock-pick-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.8rem 1.15rem;
+  border: none;
+  border-bottom: 1px solid rgba(232, 221, 208, 0.6);
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.restock-pick-item:last-child {
+  border-bottom: none;
+}
+
+.restock-pick-item:hover {
+  background: rgba(250, 246, 241, 0.9);
+}
+
+.restock-pick-info {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.restock-pick-info strong {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.restock-pick-info span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.restock-tip {
+  padding: 1rem 1.15rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  box-shadow: var(--shadow);
+}
+
+.restock-tip strong {
+  display: block;
+  color: var(--coffee);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+
+.restock-tip em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--mint);
+}
+
+.restock-tip em:last-of-type {
+  color: var(--caramel);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  .restock-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .restock-sidebar {
+    position: static;
+    order: -1;
+  }
+
+  .restock-sidebar-card .card-body-flush {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .restock-cards {
+    grid-template-columns: 1fr;
+  }
+
+  #view-restock .topbar h2 {
+    font-size: 1.65rem;
+  }
+
+  .restock-topbar {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 1rem;
+  }
 }
