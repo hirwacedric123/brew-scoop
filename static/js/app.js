@@ -12,6 +12,9 @@ const state = {
   salesTo: null,
   salesReport: null,
   selectedSalesDate: null,
+  users: [],
+  deleteUserId: null,
+  currentUser: window.CURRENT_USER || null,
 };
 
 const fmt = new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 });
@@ -22,9 +25,14 @@ const fmtNum = new Intl.NumberFormat("en-RW");
 async function api(url, options = {}) {
   const res = await fetch(url, {
     headers: { "Content-Type": "application/json", ...options.headers },
+    credentials: "same-origin",
     ...options,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error("Session expired");
+  }
   if (!res.ok) throw new Error(data.error || "Something went wrong");
   return data;
 }
@@ -61,6 +69,7 @@ function switchView(viewId) {
   if (viewId === "restock") loadRestockView();
   if (viewId === "history") loadHistory();
   if (viewId === "sales") loadSalesReports();
+  if (viewId === "admin") loadUsers();
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -728,6 +737,148 @@ function selectSalesDate(date) {
   }
 }
 
+// ── Admin: User Management ─────────────────────────────────────────────────
+
+async function loadUsers() {
+  if (!state.currentUser || state.currentUser.role !== "admin") return;
+
+  try {
+    state.users = await api("/api/admin/users");
+    renderUsersTable(state.users);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function renderUsersTable(users) {
+  const tbody = document.getElementById("users-table-body");
+  if (!tbody) return;
+
+  if (!users.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No users yet</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = users
+    .map((u) => {
+      const isSelf = state.currentUser && u.id === state.currentUser.id;
+      const roleLabel = u.role === "admin" ? "Administrator" : "Stock Manager";
+      const statusClass = u.is_active ? "ok" : "out";
+      const statusLabel = u.is_active ? "Active" : "Inactive";
+
+      return `
+    <tr>
+      <td><strong>${esc(u.display_name)}</strong></td>
+      <td>${esc(u.username)}</td>
+      <td><span class="badge badge-category">${roleLabel}</span></td>
+      <td><span class="badge badge-stock ${statusClass}">${statusLabel}</span></td>
+      <td>
+        <div class="action-group">
+          <button class="btn-icon" title="Edit" onclick="openEditUser(${u.id})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          ${
+            isSelf
+              ? ""
+              : `<button class="btn-icon danger" title="Delete" onclick="openDeleteUser(${u.id}, '${escAttr(u.display_name)}')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>`
+          }
+        </div>
+      </td>
+    </tr>`;
+    })
+    .join("");
+}
+
+function openAddUser() {
+  document.getElementById("user-modal-title").textContent = "Add Stock Manager";
+  document.getElementById("user-form").reset();
+  document.getElementById("user-id").value = "";
+  document.getElementById("user-username").disabled = false;
+  document.getElementById("user-password").required = true;
+  document.getElementById("user-password-group").hidden = false;
+  document.getElementById("user-active-group").hidden = true;
+  document.getElementById("user-role").value = "stock_manager";
+  showModal("user-modal");
+}
+
+function openEditUser(id) {
+  const user = state.users.find((u) => u.id === id);
+  if (!user) return;
+
+  document.getElementById("user-modal-title").textContent = "Edit User";
+  document.getElementById("user-id").value = user.id;
+  document.getElementById("user-display-name-input").value = user.display_name;
+  document.getElementById("user-username").value = user.username;
+  document.getElementById("user-username").disabled = true;
+  document.getElementById("user-password").value = "";
+  document.getElementById("user-password").required = false;
+  document.getElementById("user-password-group").hidden = false;
+  document.getElementById("user-active-group").hidden = false;
+  document.getElementById("user-role").value = user.role;
+  document.getElementById("user-active").checked = user.is_active;
+  showModal("user-modal");
+}
+
+function openDeleteUser(id, name) {
+  state.deleteUserId = id;
+  document.getElementById("delete-user-name").textContent = name;
+  showModal("delete-user-modal");
+}
+
+async function saveUser(e) {
+  e.preventDefault();
+  const id = document.getElementById("user-id").value;
+  const payload = {
+    display_name: document.getElementById("user-display-name-input").value,
+    role: document.getElementById("user-role").value,
+  };
+
+  const password = document.getElementById("user-password").value;
+  if (password) payload.password = password;
+
+  try {
+    if (id) {
+      payload.is_active = document.getElementById("user-active").checked;
+      await api(`/api/admin/users/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+      toast("User updated");
+    } else {
+      payload.username = document.getElementById("user-username").value;
+      if (!password) {
+        toast("Password is required for new users", "error");
+        return;
+      }
+      await api("/api/admin/users", { method: "POST", body: JSON.stringify(payload) });
+      toast("Stock manager created");
+    }
+    hideModal("user-modal");
+    loadUsers();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function confirmDeleteUser() {
+  try {
+    await api(`/api/admin/users/${state.deleteUserId}`, { method: "DELETE" });
+    toast("User deleted");
+    hideModal("delete-user-modal");
+    loadUsers();
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+async function logout() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch {
+    // redirect regardless
+  }
+  window.location.href = "/login";
+}
+
 function formatDateLabel(isoDate) {
   const [y, m, d] = isoDate.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
@@ -817,6 +968,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("history-type-filter").addEventListener("change", loadHistory);
 
+  document.getElementById("btn-logout")?.addEventListener("click", logout);
+  document.getElementById("btn-add-user")?.addEventListener("click", openAddUser);
+  document.getElementById("user-form")?.addEventListener("submit", saveUser);
+  document.getElementById("confirm-delete-user")?.addEventListener("click", confirmDeleteUser);
+
   document.querySelectorAll("[data-close-modal]").forEach((btn) => {
     btn.addEventListener("click", () => {
       btn.closest(".modal-overlay").hidden = true;
@@ -846,3 +1002,5 @@ window.openDeleteProduct = openDeleteProduct;
 window.quickSell = quickSell;
 window.selectQuickPick = selectQuickPick;
 window.selectSalesDate = selectSalesDate;
+window.openEditUser = openEditUser;
+window.openDeleteUser = openDeleteUser;

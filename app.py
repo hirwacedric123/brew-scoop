@@ -5,10 +5,30 @@ import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, jsonify, render_template, request, g
+from flask import Flask, jsonify, redirect, render_template, request, g, url_for
+from werkzeug.security import generate_password_hash
+
+from auth import (
+    admin_required,
+    get_current_user,
+    get_user_by_username,
+    hash_password,
+    init_users_table,
+    login_required,
+    login_user,
+    logout_user,
+    public_user,
+    row_to_user,
+    validate_user_payload,
+    verify_password,
+)
 
 app = Flask(__name__)
 app.config["DATABASE"] = os.path.join(os.path.dirname(__file__), "brew_scoop.db")
+app.config["SECRET_KEY"] = os.environ.get(
+    "BREW_SCOOP_SECRET_KEY", "dev-change-me-in-production"
+)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 KIGALI_OFFSET = timedelta(hours=2)
 
@@ -74,8 +94,28 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
         """
     )
+    init_users_table(db)
+    _seed_default_admin(db)
     db.commit()
     db.close()
+
+
+def _seed_default_admin(db):
+    count = db.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+    if count > 0:
+        return
+
+    username = os.environ.get("BREW_SCOOP_ADMIN_USERNAME", "admin")
+    password = os.environ.get("BREW_SCOOP_ADMIN_PASSWORD", "admin123")
+    display_name = os.environ.get("BREW_SCOOP_ADMIN_NAME", "Administrator")
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+    db.execute(
+        """INSERT INTO users
+           (username, password_hash, display_name, role, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, 'admin', 1, ?, ?)""",
+        (username, generate_password_hash(password), display_name, ts, ts),
+    )
 
 
 def now_kigali():
@@ -196,14 +236,172 @@ def _daily_sales_breakdown(db, date_from, date_to):
 
 # ── Pages ──────────────────────────────────────────────────────────────────
 
+@app.route("/login")
+def login():
+    if get_current_user(get_db()) is not None:
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+
 @app.route("/")
+@login_required
 def index():
-    return render_template("index.html", categories=CATEGORIES)
+    user = get_current_user(get_db())
+    return render_template(
+        "index.html",
+        categories=CATEGORIES,
+        current_user=public_user(user),
+    )
+
+
+# ── Auth API ───────────────────────────────────────────────────────────────
+
+@app.route("/api/auth/login", methods=["POST"])
+def auth_login():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+
+    db = get_db()
+    row = get_user_by_username(db, username)
+    if not row or not row["is_active"] or not verify_password(row["password_hash"], password):
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    login_user(row["id"])
+    return jsonify({"user": public_user(row)})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def auth_logout():
+    logout_user()
+    return jsonify({"message": "Logged out"})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+@login_required
+def auth_me():
+    user = get_current_user(get_db())
+    return jsonify({"user": public_user(user)})
+
+
+# ── Admin API ──────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/users", methods=["GET"])
+@admin_required
+def admin_list_users():
+    rows = get_db().execute(
+        "SELECT * FROM users ORDER BY role ASC, username ASC"
+    ).fetchall()
+    return jsonify([row_to_user(r) for r in rows])
+
+
+@app.route("/api/admin/users", methods=["POST"])
+@admin_required
+def admin_create_user():
+    data = request.get_json(silent=True) or {}
+    error = validate_user_payload(data, creating=True)
+    if error:
+        return jsonify({"error": error}), 400
+
+    db = get_db()
+    if get_user_by_username(db, data["username"]):
+        return jsonify({"error": "Username already exists"}), 409
+
+    ts = now_iso()
+    cur = db.execute(
+        """INSERT INTO users
+           (username, password_hash, display_name, role, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, ?)""",
+        (
+            data["username"].strip(),
+            hash_password(data["password"]),
+            (data.get("display_name") or data["username"]).strip(),
+            data.get("role", "stock_manager"),
+            ts,
+            ts,
+        ),
+    )
+    db.commit()
+    row = get_db().execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify(row_to_user(row)), 201
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["PUT"])
+@admin_required
+def admin_update_user(user_id):
+    db = get_db()
+    row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+
+    current = get_current_user(db)
+    data = request.get_json(silent=True) or {}
+
+    if "display_name" in data:
+        display_name = (data.get("display_name") or "").strip()
+        if not display_name:
+            return jsonify({"error": "Display name cannot be empty"}), 400
+    else:
+        display_name = row["display_name"]
+
+    if "role" in data:
+        role = data["role"]
+        if role not in ("admin", "stock_manager"):
+            return jsonify({"error": "Invalid role"}), 400
+        if current["id"] == user_id and role != "admin":
+            return jsonify({"error": "You cannot remove your own admin role"}), 400
+    else:
+        role = row["role"]
+
+    if "is_active" in data:
+        is_active = 1 if data["is_active"] else 0
+        if current["id"] == user_id and not is_active:
+            return jsonify({"error": "You cannot deactivate your own account"}), 400
+    else:
+        is_active = row["is_active"]
+
+    password_hash = row["password_hash"]
+    if data.get("password"):
+        if len(data["password"]) < 6:
+            return jsonify({"error": "Password must be at least 6 characters"}), 400
+        password_hash = hash_password(data["password"])
+
+    ts = now_iso()
+    db.execute(
+        """UPDATE users SET
+           display_name=?, role=?, is_active=?, password_hash=?, updated_at=?
+           WHERE id=?""",
+        (display_name, role, is_active, password_hash, ts, user_id),
+    )
+    db.commit()
+    updated = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return jsonify(row_to_user(updated))
+
+
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+@admin_required
+def admin_delete_user(user_id):
+    db = get_db()
+    current = get_current_user(db)
+    if current["id"] == user_id:
+        return jsonify({"error": "You cannot delete your own account"}), 400
+
+    row = db.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "User not found"}), 404
+
+    db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    db.commit()
+    return jsonify({"message": "User deleted"})
 
 
 # ── Products API ───────────────────────────────────────────────────────────
 
 @app.route("/api/products", methods=["GET"])
+@login_required
 def list_products():
     db = get_db()
     search = request.args.get("search", "").strip()
@@ -229,6 +427,7 @@ def list_products():
 
 
 @app.route("/api/products/<int:product_id>", methods=["GET"])
+@login_required
 def get_product(product_id):
     row = get_db().execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     if not row:
@@ -237,6 +436,7 @@ def get_product(product_id):
 
 
 @app.route("/api/products", methods=["POST"])
+@login_required
 def create_product():
     data = request.get_json(silent=True) or {}
     error = _validate_product(data)
@@ -275,6 +475,7 @@ def create_product():
 
 
 @app.route("/api/products/<int:product_id>", methods=["PUT"])
+@login_required
 def update_product(product_id):
     row = get_db().execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     if not row:
@@ -308,6 +509,7 @@ def update_product(product_id):
 
 
 @app.route("/api/products/<int:product_id>", methods=["DELETE"])
+@login_required
 def delete_product(product_id):
     db = get_db()
     row = db.execute("SELECT id FROM products WHERE id = ?", (product_id,)).fetchone()
@@ -348,6 +550,7 @@ def _validate_product(data, partial=False):
 # ── Sales & Stock API ──────────────────────────────────────────────────────
 
 @app.route("/api/sales", methods=["POST"])
+@login_required
 def create_sale():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -397,6 +600,7 @@ def create_sale():
 
 
 @app.route("/api/restock", methods=["POST"])
+@login_required
 def restock_product():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -433,6 +637,7 @@ def restock_product():
 
 
 @app.route("/api/adjust", methods=["POST"])
+@login_required
 def adjust_stock():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -473,6 +678,7 @@ def adjust_stock():
 # ── Transactions & Dashboard API ─────────────────────────────────────────────
 
 @app.route("/api/transactions", methods=["GET"])
+@login_required
 def list_transactions():
     db = get_db()
     limit = min(int(request.args.get("limit", 50)), 500)
@@ -504,6 +710,7 @@ def list_transactions():
 
 
 @app.route("/api/sales/dates", methods=["GET"])
+@login_required
 def sales_dates():
     db = get_db()
     rows = db.execute(
@@ -528,6 +735,7 @@ def sales_dates():
 
 
 @app.route("/api/sales/report", methods=["GET"])
+@login_required
 def sales_report():
     preset = request.args.get("preset", "").strip()
     date_from = request.args.get("from", "").strip()
@@ -573,6 +781,7 @@ def sales_report():
 
 
 @app.route("/api/dashboard", methods=["GET"])
+@login_required
 def dashboard_stats():
     db = get_db()
 
@@ -687,6 +896,7 @@ def dashboard_stats():
 
 
 @app.route("/api/categories", methods=["GET"])
+@login_required
 def list_categories():
     return jsonify(CATEGORIES)
 

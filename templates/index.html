@@ -54,10 +54,28 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
           <span>Sales Reports</span>
         </button>
+        {% if current_user.role == 'admin' %}
+        <button class="nav-item" data-view="admin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Team</span>
+        </button>
+        {% endif %}
       </nav>
 
       <div class="sidebar-footer">
-        <p>Coffee · Tea · Juice & More</p>
+        <div class="user-panel" id="user-panel">
+          <div class="user-info">
+            <div class="user-avatar" id="user-avatar">{{ current_user.display_name[0]|upper }}</div>
+            <div class="user-meta">
+              <strong id="user-display-name">{{ current_user.display_name }}</strong>
+              <span id="user-role-label">{{ current_user.role|replace('_', ' ')|title }}</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm btn-logout" id="btn-logout" title="Sign out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
+        <p class="sidebar-tagline">Coffee · Tea · Juice & More</p>
       </div>
     </aside>
 
@@ -370,7 +388,96 @@
           </div>
         </div>
       </section>
+
+      <!-- Admin: Team Management -->
+      {% if current_user.role == 'admin' %}
+      <section id="view-admin" class="view">
+        <header class="topbar">
+          <div>
+            <h2>Team Management</h2>
+            <p>Create and manage stock manager accounts</p>
+          </div>
+          <button class="btn btn-primary" id="btn-add-user">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+            Add Stock Manager
+          </button>
+        </header>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+      {% endif %}
     </main>
+  </div>
+
+  <!-- User Modal -->
+  <div class="modal-overlay" id="user-modal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="user-modal-title">Add Stock Manager</h3>
+        <button class="modal-close" type="button" data-close-modal>&times;</button>
+      </div>
+      <form id="user-form">
+        <input type="hidden" id="user-id">
+        <div class="form-group">
+          <label for="user-display-name-input">Display Name *</label>
+          <input type="text" id="user-display-name-input" required placeholder="e.g. Jean Pierre">
+        </div>
+        <div class="form-group">
+          <label for="user-username">Username *</label>
+          <input type="text" id="user-username" required placeholder="e.g. jpierre" pattern="[A-Za-z0-9_-]{3,}">
+        </div>
+        <div class="form-group" id="user-password-group">
+          <label for="user-password">Password *</label>
+          <input type="password" id="user-password" minlength="6" placeholder="At least 6 characters">
+        </div>
+        <div class="form-group">
+          <label for="user-role">Role</label>
+          <select id="user-role">
+            <option value="stock_manager">Stock Manager</option>
+            <option value="admin">Administrator</option>
+          </select>
+        </div>
+        <div class="form-group" id="user-active-group" hidden>
+          <label class="checkbox-label">
+            <input type="checkbox" id="user-active" checked> Account active
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete User Modal -->
+  <div class="modal-overlay" id="delete-user-modal" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Delete User</h3>
+        <button class="modal-close" type="button" data-close-modal>&times;</button>
+      </div>
+      <div style="padding: 0 1.5rem 1.5rem;">
+        <p>Are you sure you want to delete <strong id="delete-user-name"></strong>? This cannot be undone.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirm-delete-user" style="background: var(--danger);">Delete</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Product Modal -->
@@ -459,6 +566,9 @@
 
   <div id="toast-container"></div>
 
+  <script>
+    window.CURRENT_USER = {{ current_user|tojson }};
+  </script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
