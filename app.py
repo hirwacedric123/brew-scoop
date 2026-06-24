@@ -544,16 +544,25 @@ def update_product(product_id):
     if error:
         return jsonify({"error": error}), 400
 
+    try:
+        new_quantity = int(data.get("quantity", row["quantity"]))
+        if new_quantity < 0:
+            return jsonify({"error": "Quantity cannot be negative"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid quantity"}), 400
+
     ts = now_iso()
     db = get_db()
+    old_quantity = row["quantity"]
     db.execute(
         """UPDATE products SET
-           name=?, category=?, price=?, reorder_level=?, sku=?, description=?, updated_at=?
+           name=?, category=?, price=?, quantity=?, reorder_level=?, sku=?, description=?, updated_at=?
            WHERE id=?""",
         (
             data["name"].strip(),
             data.get("category", row["category"]),
             float(data["price"]),
+            new_quantity,
             int(data.get("reorder_level", row["reorder_level"])),
             (data.get("sku") or "").strip() or None,
             (data.get("description") or "").strip() or None,
@@ -561,6 +570,22 @@ def update_product(product_id):
             product_id,
         ),
     )
+
+    if new_quantity != old_quantity:
+        diff = new_quantity - old_quantity
+        db.execute(
+            """INSERT INTO transactions
+               (product_id, type, quantity, unit_price, total_amount, notes, created_at)
+               VALUES (?, 'adjustment', ?, ?, 0, ?, ?)""",
+            (
+                product_id,
+                abs(diff),
+                float(data["price"]),
+                f"Updated from product edit ({old_quantity} → {new_quantity})",
+                ts,
+            ),
+        )
+
     db.commit()
     updated = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     return jsonify(row_to_product(updated))

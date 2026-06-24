@@ -393,7 +393,7 @@ function openAddProduct() {
   document.getElementById("product-modal-title").textContent = "Add Product";
   document.getElementById("product-form").reset();
   document.getElementById("product-id").value = "";
-  document.getElementById("quantity-group").style.display = "";
+  document.getElementById("product-quantity-label").textContent = "Initial Quantity";
   document.getElementById("product-reorder").value = "10";
   showModal("product-modal");
 }
@@ -407,9 +407,10 @@ async function openEditProduct(id) {
     document.getElementById("product-category").value = p.category;
     document.getElementById("product-sku").value = p.sku;
     document.getElementById("product-price").value = p.price;
+    document.getElementById("product-quantity").value = p.quantity;
+    document.getElementById("product-quantity-label").textContent = "Stock Quantity";
     document.getElementById("product-reorder").value = p.reorder_level;
     document.getElementById("product-description").value = p.description;
-    document.getElementById("quantity-group").style.display = "none";
     showModal("product-modal");
   } catch (e) {
     toast(e.message, "error");
@@ -432,11 +433,8 @@ async function saveProduct(e) {
     price: parseFloat(document.getElementById("product-price").value),
     reorder_level: parseInt(document.getElementById("product-reorder").value, 10),
     description: document.getElementById("product-description").value,
+    quantity: parseInt(document.getElementById("product-quantity").value, 10) || 0,
   };
-
-  if (!id) {
-    payload.quantity = parseInt(document.getElementById("product-quantity").value, 10) || 0;
-  }
 
   try {
     if (id) {
