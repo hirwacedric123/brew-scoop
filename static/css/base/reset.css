@@ -1,0 +1,52 @@
+/* base/reset.css */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--foam);
+  color: var(--text);
+  line-height: 1.55;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body:not(.login-page) {
+  background:
+    radial-gradient(ellipse 80% 50% at 100% 0%, rgba(196, 165, 116, 0.08) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 40% at 0% 100%, rgba(93, 64, 55, 0.06) 0%, transparent 50%),
+    var(--foam);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--latte) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--latte);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--caramel);
+}
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}

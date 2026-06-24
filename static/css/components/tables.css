@@ -1,0 +1,104 @@
+/* components/tables.css */
+
+/* Table */
+.table-wrap {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.table-premium .data-table th {
+  background: linear-gradient(to bottom, white, var(--foam));
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.table-premium .data-table td:first-child,
+.table-premium .data-table th:first-child {
+  padding-left: 1.35rem;
+}
+
+.table-premium .data-table td:last-child,
+.table-premium .data-table th:last-child {
+  padding-right: 1.35rem;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.85rem 1.15rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background: var(--foam);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.data-table td {
+  padding: 0.85rem 1.15rem;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr {
+  transition: background var(--transition);
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: rgba(250, 246, 241, 0.6);
+}
+
+.data-table tbody tr:hover {
+  background: rgba(245, 230, 211, 0.4);
+}
+
+.product-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.product-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--latte), var(--cream));
+  color: var(--coffee);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.78rem;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+.product-cell-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.product-cell strong,
+.product-cell-text strong {
+  font-weight: 600;
+}
+
+.product-cell span,
+.product-cell-text span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}

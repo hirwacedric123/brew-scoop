@@ -1,0 +1,9 @@
+/* pages/restock.css */
+
+#view-restock .sell-layout {
+  max-width: 960px;
+}
+
+#view-restock .card {
+  height: 100%;
+}

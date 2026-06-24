@@ -1,0 +1,138 @@
+/* pages/login.css */
+
+/* Login page */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  background: var(--espresso);
+  padding: 0;
+}
+
+.login-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  min-height: 100vh;
+}
+
+.login-hero {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 3rem;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(196, 165, 116, 0.25) 0%, transparent 55%),
+    radial-gradient(ellipse at 70% 80%, rgba(245, 230, 211, 0.08) 0%, transparent 50%),
+    linear-gradient(160deg, var(--espresso) 0%, var(--espresso-light) 100%);
+  color: var(--cream);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(245, 230, 211, 0.06) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+
+.login-hero .brand-icon {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 1.5rem;
+  color: var(--caramel);
+  position: relative;
+}
+
+.login-hero h1 {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  position: relative;
+}
+
+.login-hero > p {
+  color: rgba(245, 230, 211, 0.7);
+  font-size: 1.05rem;
+  position: relative;
+}
+
+.login-hero-tagline {
+  margin-top: 2.5rem;
+  padding: 0.75rem 1.25rem;
+  border: 1px solid rgba(245, 230, 211, 0.15);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  color: rgba(245, 230, 211, 0.55);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  position: relative;
+}
+
+.login-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem;
+  background:
+    radial-gradient(ellipse at 80% 20%, rgba(196, 165, 116, 0.12) 0%, transparent 50%),
+    var(--foam);
+}
+
+.login-shell {
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-card {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(44, 24, 16, 0.12);
+  padding: 2.25rem;
+  border: 1px solid var(--border);
+}
+
+.login-card h2 {
+  font-family: var(--font-display);
+  font-size: 1.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.login-subtitle {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.75rem;
+}
+
+@media (max-width: 900px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .login-hero {
+    padding: 2.5rem 1.5rem 2rem;
+    min-height: auto;
+  }
+
+  .login-hero h1 {
+    font-size: 2rem;
+  }
+
+  .login-hero-tagline {
+    display: none;
+  }
+
+  .login-panel {
+    padding: 1.5rem;
+    align-items: flex-start;
+    padding-top: 0;
+    margin-top: -1rem;
+  }
+}

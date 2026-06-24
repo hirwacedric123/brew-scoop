@@ -1,0 +1,31 @@
+/* base/variables.css */
+
+:root {
+  --espresso: #2c1810;
+  --espresso-light: #3d2618;
+  --coffee: #5d4037;
+  --caramel: #c4a574;
+  --cream: #f5e6d3;
+  --latte: #e8d5b7;
+  --foam: #faf6f1;
+  --mint: #6b8f71;
+  --mint-light: #8fb396;
+  --amber: #d4a03c;
+  --danger: #c45c4a;
+  --danger-light: #f8e8e5;
+  --warning: #d4a03c;
+  --warning-light: #fdf4e3;
+  --success: #5a8f6a;
+  --text: #2c1810;
+  --text-muted: #7a6a5e;
+  --border: #e8ddd0;
+  --shadow: 0 4px 24px rgba(44, 24, 16, 0.08);
+  --shadow-lg: 0 12px 48px rgba(44, 24, 16, 0.12);
+  --shadow-hover: 0 8px 32px rgba(44, 24, 16, 0.12);
+  --radius: 14px;
+  --radius-sm: 8px;
+  --sidebar-width: 260px;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
+  --transition: 0.2s ease;
+}

@@ -1,0 +1,39 @@
+/* components/skeleton.css */
+
+/* Skeleton loaders */
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--foam) 25%, var(--latte) 50%, var(--foam) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-text {
+  height: 0.9rem;
+  width: 100%;
+}
+
+.skeleton-text.sm {
+  height: 0.65rem;
+  width: 55%;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-text.lg {
+  height: 1.5rem;
+  width: 75%;
+  margin: 0.35rem 0;
+}
+
+.skeleton-stat {
+  pointer-events: none;
+}
+
+.skeleton-row td {
+  padding: 0.85rem 1rem;
+}

@@ -1,0 +1,51 @@
+/* components/badges.css */
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.badge-category {
+  background: var(--latte);
+  color: var(--coffee);
+}
+
+.badge-stock {
+  background: var(--mint-light);
+  color: #2d4a32;
+}
+
+.badge-stock.low {
+  background: var(--warning-light);
+  color: #8a6010;
+}
+
+.badge-stock.out {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.badge-warning {
+  background: var(--warning-light);
+  color: #8a6010;
+}
+
+.badge-sale {
+  background: #e8f0ea;
+  color: var(--success);
+}
+
+.badge-restock {
+  background: #e8eef8;
+  color: #3d5a80;
+}
+
+.badge-adjustment {
+  background: var(--latte);
+  color: var(--coffee);
+}

@@ -1,0 +1,315 @@
+/* pages/sell.css */
+
+/* Sell layout */
+.sell-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.sell-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.cart-card {
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 2rem);
+}
+
+.cart-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+}
+
+.cart-footer {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.cart-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cart-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem;
+  background: var(--foam);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cart-item-info strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.cart-item-info span {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.cart-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.cart-line-total {
+  flex: 1;
+  text-align: right;
+  font-weight: 700;
+  color: var(--coffee);
+  font-size: 0.9rem;
+}
+
+.qty-input-sm {
+  width: auto;
+}
+
+.qty-input-sm .qty-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 1rem;
+}
+
+.qty-input-sm input {
+  width: 42px;
+  font-size: 0.9rem;
+  padding: 0.35rem;
+}
+
+.quick-pick-item.in-cart {
+  border-color: var(--caramel);
+  background: white;
+  box-shadow: var(--shadow);
+}
+
+.qp-cart-badge {
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--coffee);
+  background: var(--latte);
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.checkout-lines {
+  margin: 0.75rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+}
+
+.checkout-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0;
+  font-size: 0.88rem;
+}
+
+.checkout-line strong {
+  white-space: nowrap;
+}
+
+.checkout-ref,
+.checkout-grand-total {
+  font-weight: 600;
+}
+
+.checkout-grand-total strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--coffee);
+}
+
+.sell-form-card {
+  position: sticky;
+  top: 1rem;
+}
+
+.total-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, var(--espresso), var(--coffee));
+  color: var(--cream);
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: 1.25rem;
+}
+
+.total-display strong {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+
+.quick-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.quick-pick-item {
+  background: var(--foam);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-pick-item::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--qp-accent, var(--caramel));
+  opacity: 0.7;
+}
+
+.quick-pick-item:hover {
+  border-color: var(--caramel);
+  background: white;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+.quick-pick-item.out-of-stock {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.quick-pick-item strong {
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 0.25rem;
+}
+
+.quick-pick-item span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.quick-pick-item .qp-price {
+  font-weight: 600;
+  color: var(--coffee);
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
+}
+
+/* POS counter mode */
+.pos-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.pos-barcode-wrap {
+  flex: 1;
+  min-width: 220px;
+}
+
+.pos-barcode-wrap label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.35rem;
+}
+
+.pos-barcode-wrap input {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  border: 2px solid var(--caramel);
+  border-radius: var(--radius-sm);
+  background: var(--foam);
+  font-family: var(--font-body);
+}
+
+.pos-barcode-wrap input:focus {
+  outline: none;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(196, 165, 116, 0.25);
+}
+
+.pos-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.pos-shortcuts kbd {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.72rem;
+  font-family: inherit;
+  background: var(--foam);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--border);
+}
+
+#view-sell.pos-mode .quick-pick-grid {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+#view-sell.pos-mode .quick-pick-item {
+  padding: 1.15rem;
+  min-height: 110px;
+}
+
+#view-sell.pos-mode .quick-pick-item strong {
+  font-size: 1rem;
+}
+
+#view-sell.pos-mode .quick-pick-item .qp-price {
+  font-size: 1.05rem;
+}
+
+#view-sell.pos-mode .sell-layout {
+  grid-template-columns: 1fr 400px;
+}
+
+#view-sell.pos-mode .cart-card {
+  border-width: 2px;
+  border-color: var(--caramel);
+}
+
+#view-sell.pos-mode .total-display strong {
+  font-size: 1.75rem;
+}

@@ -1,0 +1,9 @@
+/* pages/history.css */
+
+#view-history .toolbar {
+  margin-bottom: 1.5rem;
+}
+
+#view-history .filter-chips {
+  flex: 1;
+}

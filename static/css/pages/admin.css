@@ -1,0 +1,44 @@
+/* pages/admin.css */
+
+/* Admin tabs */
+.admin-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-tab {
+  padding: 0.55rem 1.1rem;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.admin-tab:hover {
+  border-color: var(--caramel);
+  color: var(--coffee);
+}
+
+.admin-tab.active {
+  background: var(--espresso);
+  border-color: var(--espresso);
+  color: var(--cream);
+}
+
+.admin-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.admin-panel-header h3 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+}

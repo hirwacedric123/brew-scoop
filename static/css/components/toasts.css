@@ -1,0 +1,38 @@
+/* components/toasts.css */
+
+/* Toast */
+#toast-container {
+  position: fixed;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toast {
+  background: white;
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1.15rem;
+  box-shadow: 0 12px 40px rgba(44, 24, 16, 0.15);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--coffee);
+  font-size: 0.88rem;
+  font-weight: 500;
+  animation: slideIn 0.3s ease;
+  max-width: 360px;
+}
+
+.toast.error {
+  border-left-color: var(--danger);
+}
+
+.toast.success {
+  border-left-color: var(--success);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}

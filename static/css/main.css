@@ -1,0 +1,35 @@
+/* Brew & Scoop — main stylesheet (imports all modules) */
+
+/* Foundation */
+@import url("base/variables.css");
+@import url("base/reset.css");
+
+/* App shell */
+@import url("layout/sidebar.css");
+@import url("layout/shell.css");
+@import url("layout/topbar.css");
+
+/* Shared UI */
+@import url("components/buttons.css");
+@import url("components/forms.css");
+@import url("components/cards.css");
+@import url("components/stats.css");
+@import url("components/toolbar.css");
+@import url("components/tables.css");
+@import url("components/badges.css");
+@import url("components/rank.css");
+@import url("components/skeleton.css");
+@import url("components/modals.css");
+@import url("components/toasts.css");
+
+/* Pages */
+@import url("pages/dashboard.css");
+@import url("pages/products.css");
+@import url("pages/sell.css");
+@import url("pages/restock.css");
+@import url("pages/history.css");
+@import url("pages/sales.css");
+@import url("pages/admin.css");
+
+/* Responsive overrides */
+@import url("layout/responsive.css");
