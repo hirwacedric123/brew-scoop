@@ -909,9 +909,116 @@ async function loadRestockView() {
   try {
     state.products = await api("/api/products");
     populateProductSelects();
+    renderRestockLowStock();
+    updateRestockPreview();
+    updateAdjustPreview();
   } catch (e) {
     toast(e.message, "error");
   }
+}
+
+function renderRestockLowStock() {
+  const el = document.getElementById("restock-low-stock");
+  if (!el) return;
+
+  const low = state.products
+    .filter((p) => p.stock_status === "low" || p.stock_status === "out")
+    .sort((a, b) => a.quantity - b.quantity);
+
+  if (!low.length) {
+    el.innerHTML = emptyState(UI_ICONS.check, "All stocked up", "No products need restocking right now.", true);
+    return;
+  }
+
+  el.innerHTML = low
+    .map(
+      (p) => `
+    <button type="button" class="restock-pick-item" onclick="selectRestockProduct(${p.id})">
+      <div class="restock-pick-info">
+        <div class="product-avatar product-avatar-sm">${esc(productInitials(p.name))}</div>
+        <div>
+          <strong>${esc(p.name)}</strong>
+          <span>${esc(p.category)} · reorder ${p.reorder_level}</span>
+        </div>
+      </div>
+      <span class="badge badge-stock ${p.stock_status}">${p.quantity} left</span>
+    </button>`
+    )
+    .join("");
+}
+
+function selectRestockProduct(id) {
+  document.getElementById("restock-product").value = String(id);
+  updateRestockPreview();
+  document.getElementById("restock-quantity")?.focus();
+}
+
+function updateRestockPreview() {
+  const preview = document.getElementById("restock-preview");
+  const id = parseInt(document.getElementById("restock-product")?.value, 10);
+  const product = state.products.find((p) => p.id === id);
+
+  if (!preview || !product) {
+    if (preview) preview.hidden = true;
+    return;
+  }
+
+  const qty = parseInt(document.getElementById("restock-quantity")?.value, 10) || 0;
+  preview.hidden = false;
+  document.getElementById("restock-preview-avatar").textContent = productInitials(product.name);
+  document.getElementById("restock-preview-name").textContent = product.name;
+  document.getElementById("restock-preview-meta").textContent = `${product.category} · ${fmt.format(product.price)} each`;
+  document.getElementById("restock-preview-current").textContent = fmtNum.format(product.quantity);
+  document.getElementById("restock-preview-after").textContent = fmtNum.format(product.quantity + qty);
+}
+
+function updateAdjustPreview() {
+  const preview = document.getElementById("adjust-preview");
+  const id = parseInt(document.getElementById("adjust-product")?.value, 10);
+  const product = state.products.find((p) => p.id === id);
+
+  if (!preview || !product) {
+    if (preview) preview.hidden = true;
+    return;
+  }
+
+  const newQty = parseInt(document.getElementById("adjust-quantity")?.value, 10);
+  const hasNewQty = !Number.isNaN(newQty);
+  preview.hidden = false;
+  document.getElementById("adjust-preview-avatar").textContent = productInitials(product.name);
+  document.getElementById("adjust-preview-name").textContent = product.name;
+  document.getElementById("adjust-preview-meta").textContent = `${product.category} · SKU ${product.sku || "—"}`;
+  document.getElementById("adjust-preview-current").textContent = fmtNum.format(product.quantity);
+  document.getElementById("adjust-preview-new").textContent = hasNewQty ? fmtNum.format(newQty) : "—";
+
+  const deltaEl = document.getElementById("adjust-delta");
+  if (!deltaEl) return;
+
+  if (!hasNewQty) {
+    deltaEl.hidden = true;
+    return;
+  }
+
+  const diff = newQty - product.quantity;
+  deltaEl.hidden = false;
+  if (diff > 0) {
+    deltaEl.className = "adjust-delta positive";
+    deltaEl.textContent = `+${diff} units`;
+  } else if (diff < 0) {
+    deltaEl.className = "adjust-delta negative";
+    deltaEl.textContent = `${diff} units`;
+  } else {
+    deltaEl.className = "adjust-delta neutral";
+    deltaEl.textContent = "No change";
+  }
+}
+
+function adjustRestockQty(delta) {
+  const input = document.getElementById("restock-quantity");
+  if (!input) return;
+  const next = Math.max(1, (parseInt(input.value, 10) || 1) + delta);
+  input.value = String(next);
+  updateRestockPreview();
 }
 
 async function submitRestock(e) {
@@ -928,6 +1035,7 @@ async function submitRestock(e) {
     toast(`Restocked ${result.name} — now ${result.quantity} units`);
     document.getElementById("restock-form").reset();
     document.getElementById("restock-quantity").value = "10";
+    document.getElementById("restock-preview").hidden = true;
     switchView("products");
   } catch (err) {
     toast(err.message, "error");
@@ -957,6 +1065,23 @@ document.getElementById("adjust-product")?.addEventListener("change", () => {
   const id = parseInt(document.getElementById("adjust-product").value, 10);
   const p = state.products.find((x) => x.id === id);
   if (p) document.getElementById("adjust-quantity").value = p.quantity;
+  updateAdjustPreview();
+});
+
+document.getElementById("adjust-quantity")?.addEventListener("input", updateAdjustPreview);
+document.getElementById("restock-product")?.addEventListener("change", updateRestockPreview);
+document.getElementById("restock-quantity")?.addEventListener("input", updateRestockPreview);
+document.getElementById("restock-qty-minus")?.addEventListener("click", () => adjustRestockQty(-1));
+document.getElementById("restock-qty-plus")?.addEventListener("click", () => adjustRestockQty(1));
+
+document.querySelectorAll(".qty-preset").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = document.getElementById("restock-quantity");
+    if (!input) return;
+    const add = parseInt(btn.dataset.qty, 10) || 0;
+    input.value = String((parseInt(input.value, 10) || 0) + add);
+    updateRestockPreview();
+  });
 });
 
 // ── History ────────────────────────────────────────────────────────────────
@@ -989,7 +1114,7 @@ function renderHistory(transactions) {
         ${productCell(t.product_name, esc(t.category))}
       </td>
       <td>${typeBadge(t.type)}</td>
-      <td>${t.type === "sale" ? "−" : "+"}${t.quantity}</td>
+      <td>${formatTransactionQty(t)}</td>
       <td>${t.type === "sale" ? fmt.format(t.total_amount) : "—"}</td>
       <td style="color:var(--text-muted);font-size:0.82rem">${esc(t.notes || "—")}</td>
     </tr>`
@@ -1414,6 +1539,12 @@ function typeBadge(type) {
   return `<span class="badge badge-${type}">${labels[type] || type}</span>`;
 }
 
+function formatTransactionQty(t) {
+  if (t.type === "sale") return `−${t.quantity}`;
+  if (t.type === "adjustment") return `${t.quantity > 0 ? "+" : ""}${t.quantity}`;
+  return `+${t.quantity}`;
+}
+
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleString("en-RW", {
@@ -1531,6 +1662,7 @@ function debounce(fn, ms) {
 }
 
 // Expose for inline handlers
+window.selectRestockProduct = selectRestockProduct;
 window.openEditProduct = openEditProduct;
 window.openDeleteProduct = openDeleteProduct;
 window.quickSell = quickSell;

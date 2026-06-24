@@ -579,7 +579,7 @@ def update_product(product_id):
                VALUES (?, 'adjustment', ?, ?, 0, ?, ?)""",
             (
                 product_id,
-                abs(diff),
+                diff,
                 float(data["price"]),
                 f"Updated from product edit ({old_quantity} → {new_quantity})",
                 ts,
@@ -859,7 +859,7 @@ def adjust_stock():
         """INSERT INTO transactions
            (product_id, type, quantity, unit_price, total_amount, notes, created_at)
            VALUES (?, 'adjustment', ?, ?, 0, ?, ?)""",
-        (product_id, abs(diff), float(row["price"]),
+        (product_id, diff, float(row["price"]),
          f"Adjusted from {row['quantity']} to {new_quantity}. "
          + ((data.get("notes") or "").strip() or "Manual stock correction"), ts),
     )
