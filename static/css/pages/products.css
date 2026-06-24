@@ -1,9 +1,26 @@
 /* pages/products.css */
 
 #view-products .topbar {
-  margin-bottom: 1.5rem;
+  align-items: center;
+}
+
+#view-products .topbar-heading {
+  gap: 0;
+}
+
+#view-products .topbar h2 {
+  font-size: 2rem;
+  margin: 0;
 }
 
 #view-products .toolbar {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+#view-products .table-wrap {
+  transition: box-shadow var(--transition);
+}
+
+#view-products .table-wrap:hover {
+  box-shadow: var(--shadow-hover);
 }

@@ -11,13 +11,13 @@
   gap: 0;
 }
 
-.dashboard-eyebrow {
-  font-size: 0.72rem;
+.dashboard-eyebrow,
+.page-eyebrow {
+  font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--caramel);
-  margin-bottom: 0.2rem;
+  letter-spacing: 0.12em;
+  margin-bottom: 0.25rem;
 }
 
 #view-dashboard .topbar h2 {
