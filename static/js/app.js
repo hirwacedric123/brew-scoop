@@ -46,7 +46,16 @@ const UI_ICONS = {
   check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
 };
 
-function emptyState(icon, title, message) {
+function emptyState(icon, title, message, compact = false) {
+  if (compact) {
+    return `<div class="empty-state empty-state-compact">
+      <div class="empty-state-icon">${icon}</div>
+      <div>
+        <strong>${esc(title)}</strong>
+        <p>${esc(message)}</p>
+      </div>
+    </div>`;
+  }
   return `<div class="empty-state">
     <div class="empty-state-icon">${icon}</div>
     <strong>${esc(title)}</strong>
@@ -54,8 +63,9 @@ function emptyState(icon, title, message) {
   </div>`;
 }
 
-function statCard(cls, icon, label, value, sub, extraStyle = "") {
-  return `<div class="stat-card ${cls}"${extraStyle ? ` style="${extraStyle}"` : ""}>
+function statCard(cls, icon, label, value, sub, extraStyle = "", featured = false) {
+  const featuredCls = featured ? " stat-card-featured" : "";
+  return `<div class="stat-card ${cls}${featuredCls}"${extraStyle ? ` style="${extraStyle}"` : ""}>
     <div class="stat-icon">${icon}</div>
     <div class="stat-content">
       <div class="stat-label">${label}</div>
@@ -207,17 +217,22 @@ function showTableSkeleton(tbodyId, colCount, rowCount = 5) {
 }
 
 function showDashboardSkeleton() {
-  document.getElementById("dashboard-stats").innerHTML = Array(5)
-    .fill(0)
-    .map(
-      () => `
-    <div class="stat-card skeleton-stat">
+  document.getElementById("dashboard-stats").innerHTML = `
+    <div class="stat-card stat-card-featured skeleton-stat">
       <div class="skeleton skeleton-text sm"></div>
       <div class="skeleton skeleton-text lg"></div>
       <div class="skeleton skeleton-text sm"></div>
+    </div>
+    ${Array(4)
+      .fill(0)
+      .map(
+        () => `
+    <div class="stat-card skeleton-stat">
+      <div class="skeleton skeleton-text sm"></div>
+      <div class="skeleton skeleton-text lg"></div>
     </div>`
-    )
-    .join("");
+      )
+      .join("")}`;
 }
 
 // ── Categories ─────────────────────────────────────────────────────────────
@@ -270,27 +285,33 @@ function renderDashboard(d) {
     : "Today";
 
   document.getElementById("dashboard-stats").innerHTML = `
-    ${statCard("revenue", UI_ICONS.revenue, "Sold Today", fmt.format(d.revenue_today), `${fmtNum.format(d.units_sold_today)} units · ${todayLabel}`)}
-    ${statCard("sales", UI_ICONS.sales, "This Week", fmt.format(d.revenue_week), `${fmtNum.format(d.units_sold_week)} units sold`)}
-    ${statCard("", UI_ICONS.chart, "This Month", fmt.format(d.revenue_month), `${fmtNum.format(d.units_sold_month)} units sold`, "--accent: var(--amber)")}
-    ${statCard("stock", UI_ICONS.stock, "Inventory Value", fmt.format(d.inventory_value), `${fmtNum.format(d.total_stock_units)} units · ${d.total_products} products`)}
-    ${statCard("alert", UI_ICONS.alert, "Stock Alerts", d.low_stock_count, `${d.out_of_stock_count} out of stock`)}
+    ${statCard("revenue", UI_ICONS.revenue, "Sold Today", fmt.format(d.revenue_today), `${fmtNum.format(d.units_sold_today)} units · ${todayLabel}`, "", true)}
+    ${statCard("sales", UI_ICONS.sales, "This Week", fmt.format(d.revenue_week), `${fmtNum.format(d.units_sold_week)} units`)}
+    ${statCard("month", UI_ICONS.chart, "This Month", fmt.format(d.revenue_month), `${fmtNum.format(d.units_sold_month)} units`)}
+    ${statCard("stock", UI_ICONS.stock, "Inventory", fmt.format(d.inventory_value), `${d.total_products} products`)}
+    ${statCard("alert", UI_ICONS.alert, "Alerts", d.low_stock_count, `${d.out_of_stock_count} out of stock`)}
   `;
 
-  document.getElementById("low-stock-label").textContent =
-    d.low_stock_count ? `${d.low_stock_count} items need attention` : "All good";
+  const labelEl = document.getElementById("low-stock-label");
+  if (labelEl) {
+    labelEl.textContent = d.low_stock_count ? `${d.low_stock_count} need attention` : "All clear";
+    labelEl.className = d.low_stock_count ? "status-pill status-pill-warn" : "status-pill status-pill-ok";
+  }
 
   const lowList = document.getElementById("low-stock-list");
   if (!d.low_stock_items.length) {
-    lowList.innerHTML = emptyState(UI_ICONS.check, "All stocked up", "Every product is above its reorder level.");
+    lowList.innerHTML = emptyState(UI_ICONS.check, "All stocked up", "Every product is above reorder level.", true);
   } else {
     lowList.innerHTML = d.low_stock_items
       .map(
         (p) => `
-      <div class="list-item">
-        <div class="list-item-info">
-          <strong>${esc(p.name)}</strong>
-          <span>${esc(p.category)} · Reorder at ${p.reorder_level}</span>
+      <div class="alert-row">
+        <div class="alert-row-info">
+          <div class="product-avatar product-avatar-sm">${esc(productInitials(p.name))}</div>
+          <div>
+            <strong>${esc(p.name)}</strong>
+            <span>${esc(p.category)} · reorder at ${p.reorder_level}</span>
+          </div>
         </div>
         <span class="badge badge-stock ${p.stock_status}">${p.quantity} left</span>
       </div>`
@@ -300,7 +321,7 @@ function renderDashboard(d) {
 
   const topList = document.getElementById("top-products-list");
   if (!d.top_products.filter((p) => p.units_sold > 0).length) {
-    topList.innerHTML = emptyState(UI_ICONS.chart, "No sales yet", "Top sellers will appear here once you make your first sale.");
+    topList.innerHTML = emptyState(UI_ICONS.chart, "No sales yet", "Top sellers appear after your first sale.", true);
   } else {
     topList.innerHTML = d.top_products
       .map((p, i) => {
@@ -320,43 +341,41 @@ function renderDashboard(d) {
 
   const maxVal = Math.max(...d.categories.map((c) => c.value), 1);
   document.getElementById("category-breakdown").innerHTML = d.categories.length
-    ? d.categories
+    ? `<div class="category-bars">${d.categories
         .map(
           (c) => `
       <div class="category-bar-item">
         <div class="category-bar-header">
-          <span>${esc(c.name)}</span>
-          <span>${fmt.format(c.value)} · ${c.total_qty} units</span>
+          <span class="category-bar-name">${esc(c.name)}</span>
+          <span class="category-bar-meta">${fmt.format(c.value)} · ${c.total_qty} units</span>
         </div>
         <div class="category-bar-track">
-          <div class="category-bar-fill" style="width:${(c.value / maxVal) * 100}%"></div>
+          <div class="category-bar-fill" style="width:${(c.value / maxVal) * 100}%;--bar-color:${categoryAccent(c.name)}"></div>
         </div>
       </div>`
         )
-        .join("")
-    : emptyState(UI_ICONS.box, "No products yet", "Add products to see inventory breakdown by category.");
+        .join("")}</div>`
+    : emptyState(UI_ICONS.box, "No products yet", "Add products to see category breakdown.", true);
 
   const recent = document.getElementById("recent-activity");
   if (!d.recent_transactions.length) {
-    recent.innerHTML = emptyState(UI_ICONS.clock, "No activity yet", "Sales, restocks, and adjustments will show up here.");
+    recent.innerHTML = emptyState(UI_ICONS.clock, "No activity yet", "Transactions will appear here.", true);
   } else {
-    recent.innerHTML = d.recent_transactions
+    recent.innerHTML = `<div class="activity-feed">${d.recent_transactions
       .map(
         (t) => `
-      <div class="list-item">
-        <div class="list-item-info">
+      <div class="activity-item">
+        <div class="activity-dot ${t.type}"></div>
+        <div class="activity-body">
           <strong>${esc(t.product_name)}</strong>
-          <span>${formatDate(t.created_at)}</span>
+          <span>${formatDate(t.created_at)} · ${typeBadge(t.type)}</span>
         </div>
-        <div style="text-align:right">
-          ${typeBadge(t.type)}
-          <div style="font-size:0.82rem;margin-top:0.2rem;color:var(--coffee);font-weight:600">
-            ${t.type === "sale" ? fmt.format(t.total_amount) : `${t.quantity > 0 ? "+" : ""}${t.quantity} units`}
-          </div>
+        <div class="activity-amount">
+          ${t.type === "sale" ? fmt.format(t.total_amount) : `${t.quantity > 0 ? "+" : ""}${t.quantity} units`}
         </div>
       </div>`
       )
-      .join("");
+      .join("")}</div>`;
   }
 }
 

@@ -93,70 +93,95 @@
     <main class="main">
       <!-- Dashboard -->
       <section id="view-dashboard" class="view active">
-        <header class="topbar">
+        <header class="topbar dashboard-topbar">
           <div class="topbar-heading">
-            <div class="page-icon accent-coffee">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            </div>
             <div>
+              <p class="dashboard-eyebrow">Overview</p>
               <h2>Dashboard</h2>
-              <p>Overview of your Brew & Scoop inventory</p>
             </div>
           </div>
-          <div class="date-badge" id="current-date"></div>
+          <div class="dashboard-topbar-end">
+            <div class="date-badge" id="current-date"></div>
+            <button type="button" class="btn btn-primary btn-sm dashboard-cta" data-view="sell">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+              New Sale
+            </button>
+          </div>
         </header>
 
-        <div class="quick-actions">
-          <button type="button" class="quick-action primary" data-view="sell">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-            New Sale
-          </button>
-          <button type="button" class="quick-action" id="btn-quick-add-product">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-            Add Product
-          </button>
-          <button type="button" class="quick-action" data-view="restock">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-            Restock
-          </button>
-          <button type="button" class="quick-action" data-view="sales">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
-            View Reports
-          </button>
+        <div class="dashboard-toolbar">
+          <div class="quick-actions">
+            <button type="button" class="quick-action" id="btn-quick-add-product">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Add Product
+            </button>
+            <button type="button" class="quick-action" data-view="restock">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              Restock
+            </button>
+            <button type="button" class="quick-action" data-view="products">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+              Products
+            </button>
+            <button type="button" class="quick-action" data-view="sales">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+              Reports
+            </button>
+          </div>
         </div>
 
-        <div class="stats-grid" id="dashboard-stats"></div>
+        <div class="dashboard-stats" id="dashboard-stats"></div>
 
         <div class="dashboard-grid">
-          <div class="card card-accent-top">
+          <div class="card dashboard-card">
             <div class="card-header">
-              <h3>Low Stock Alerts</h3>
-              <span class="text-muted" id="low-stock-label"></span>
+              <div class="card-title-group">
+                <span class="card-title-icon card-title-icon-warn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </span>
+                <h3>Low Stock Alerts</h3>
+              </div>
+              <span class="status-pill" id="low-stock-label"></span>
             </div>
-            <div class="card-body" id="low-stock-list"></div>
+            <div class="card-body card-body-flush" id="low-stock-list"></div>
           </div>
 
-          <div class="card card-accent-mint">
+          <div class="card dashboard-card">
             <div class="card-header">
-              <h3>Top Sellers</h3>
+              <div class="card-title-group">
+                <span class="card-title-icon card-title-icon-mint">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+                </span>
+                <h3>Top Sellers</h3>
+              </div>
               <span class="text-muted">All time</span>
             </div>
-            <div class="card-body" id="top-products-list"></div>
+            <div class="card-body card-body-flush" id="top-products-list"></div>
           </div>
 
-          <div class="card card-wide">
+          <div class="card dashboard-card card-wide">
             <div class="card-header">
-              <h3>Inventory by Category</h3>
+              <div class="card-title-group">
+                <span class="card-title-icon card-title-icon-coffee">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                </span>
+                <h3>Inventory by Category</h3>
+              </div>
             </div>
             <div class="card-body" id="category-breakdown"></div>
           </div>
 
-          <div class="card card-wide">
+          <div class="card dashboard-card card-wide">
             <div class="card-header">
-              <h3>Recent Activity</h3>
+              <div class="card-title-group">
+                <span class="card-title-icon card-title-icon-amber">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </span>
+                <h3>Recent Activity</h3>
+              </div>
               <button class="btn btn-ghost btn-sm" data-view="history">View all</button>
             </div>
-            <div class="card-body" id="recent-activity"></div>
+            <div class="card-body card-body-flush" id="recent-activity"></div>
           </div>
         </div>
       </section>
