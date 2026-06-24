@@ -34,6 +34,64 @@ const VIEW_TITLES = {
 const fmt = new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 });
 const fmtNum = new Intl.NumberFormat("en-RW");
 
+const UI_ICONS = {
+  revenue: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
+  sales: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>`,
+  stock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>`,
+  alert: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+  calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
+  box: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>`,
+  chart: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>`,
+  clock: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+};
+
+function emptyState(icon, title, message) {
+  return `<div class="empty-state">
+    <div class="empty-state-icon">${icon}</div>
+    <strong>${esc(title)}</strong>
+    <p>${esc(message)}</p>
+  </div>`;
+}
+
+function statCard(cls, icon, label, value, sub, extraStyle = "") {
+  return `<div class="stat-card ${cls}"${extraStyle ? ` style="${extraStyle}"` : ""}>
+    <div class="stat-icon">${icon}</div>
+    <div class="stat-content">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value">${value}</div>
+      <div class="stat-sub">${sub}</div>
+    </div>
+  </div>`;
+}
+
+function productInitials(name) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+}
+
+function productCell(name, sub) {
+  return `<div class="product-cell">
+    <div class="product-avatar">${esc(productInitials(name))}</div>
+    <div class="product-cell-text">
+      <strong>${esc(name)}</strong>
+      <span>${sub}</span>
+    </div>
+  </div>`;
+}
+
+function categoryAccent(name) {
+  const palette = ["#c4a574", "#6b8f71", "#5d4037", "#d4a03c", "#8b6f5c", "#7a9e7e", "#a67c52"];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+}
+
 // ── API ────────────────────────────────────────────────────────────────────
 
 async function api(url, options = {}) {
@@ -212,31 +270,11 @@ function renderDashboard(d) {
     : "Today";
 
   document.getElementById("dashboard-stats").innerHTML = `
-    <div class="stat-card revenue">
-      <div class="stat-label">Sold Today</div>
-      <div class="stat-value">${fmt.format(d.revenue_today)}</div>
-      <div class="stat-sub">${fmtNum.format(d.units_sold_today)} units · ${todayLabel}</div>
-    </div>
-    <div class="stat-card sales">
-      <div class="stat-label">This Week</div>
-      <div class="stat-value">${fmt.format(d.revenue_week)}</div>
-      <div class="stat-sub">${fmtNum.format(d.units_sold_week)} units sold</div>
-    </div>
-    <div class="stat-card" style="--accent: var(--amber)">
-      <div class="stat-label">This Month</div>
-      <div class="stat-value">${fmt.format(d.revenue_month)}</div>
-      <div class="stat-sub">${fmtNum.format(d.units_sold_month)} units sold</div>
-    </div>
-    <div class="stat-card stock">
-      <div class="stat-label">Inventory Value</div>
-      <div class="stat-value">${fmt.format(d.inventory_value)}</div>
-      <div class="stat-sub">${fmtNum.format(d.total_stock_units)} units · ${d.total_products} products</div>
-    </div>
-    <div class="stat-card alert">
-      <div class="stat-label">Stock Alerts</div>
-      <div class="stat-value">${d.low_stock_count}</div>
-      <div class="stat-sub">${d.out_of_stock_count} out of stock</div>
-    </div>
+    ${statCard("revenue", UI_ICONS.revenue, "Sold Today", fmt.format(d.revenue_today), `${fmtNum.format(d.units_sold_today)} units · ${todayLabel}`)}
+    ${statCard("sales", UI_ICONS.sales, "This Week", fmt.format(d.revenue_week), `${fmtNum.format(d.units_sold_week)} units sold`)}
+    ${statCard("", UI_ICONS.chart, "This Month", fmt.format(d.revenue_month), `${fmtNum.format(d.units_sold_month)} units sold`, "--accent: var(--amber)")}
+    ${statCard("stock", UI_ICONS.stock, "Inventory Value", fmt.format(d.inventory_value), `${fmtNum.format(d.total_stock_units)} units · ${d.total_products} products`)}
+    ${statCard("alert", UI_ICONS.alert, "Stock Alerts", d.low_stock_count, `${d.out_of_stock_count} out of stock`)}
   `;
 
   document.getElementById("low-stock-label").textContent =
@@ -244,7 +282,7 @@ function renderDashboard(d) {
 
   const lowList = document.getElementById("low-stock-list");
   if (!d.low_stock_items.length) {
-    lowList.innerHTML = '<div class="empty-state">All products are well stocked ☕</div>';
+    lowList.innerHTML = emptyState(UI_ICONS.check, "All stocked up", "Every product is above its reorder level.");
   } else {
     lowList.innerHTML = d.low_stock_items
       .map(
@@ -262,7 +300,7 @@ function renderDashboard(d) {
 
   const topList = document.getElementById("top-products-list");
   if (!d.top_products.filter((p) => p.units_sold > 0).length) {
-    topList.innerHTML = '<div class="empty-state">No sales recorded yet</div>';
+    topList.innerHTML = emptyState(UI_ICONS.chart, "No sales yet", "Top sellers will appear here once you make your first sale.");
   } else {
     topList.innerHTML = d.top_products
       .map((p, i) => {
@@ -296,11 +334,11 @@ function renderDashboard(d) {
       </div>`
         )
         .join("")
-    : '<div class="empty-state">No products yet</div>';
+    : emptyState(UI_ICONS.box, "No products yet", "Add products to see inventory breakdown by category.");
 
   const recent = document.getElementById("recent-activity");
   if (!d.recent_transactions.length) {
-    recent.innerHTML = '<div class="empty-state">No activity yet</div>';
+    recent.innerHTML = emptyState(UI_ICONS.clock, "No activity yet", "Sales, restocks, and adjustments will show up here.");
   } else {
     recent.innerHTML = d.recent_transactions
       .map(
@@ -346,8 +384,15 @@ async function loadProducts() {
 
 function renderProductsTable(products) {
   const tbody = document.getElementById("products-table-body");
+  const countEl = document.getElementById("products-count");
+  if (countEl) {
+    countEl.innerHTML = products.length
+      ? `<strong>${fmtNum.format(products.length)}</strong> product${products.length !== 1 ? "s" : ""}`
+      : "No products";
+  }
+
   if (!products.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No products found. Add your first item!</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">${emptyState(UI_ICONS.box, "No products found", "Try adjusting your filters or add your first item.")}</td></tr>`;
     return;
   }
 
@@ -356,10 +401,7 @@ function renderProductsTable(products) {
       (p) => `
     <tr>
       <td>
-        <div class="product-cell">
-          <strong>${esc(p.name)}</strong>
-          <span>${p.sku ? esc(p.sku) : "No SKU"}</span>
-        </div>
+        ${productCell(p.name, p.sku ? esc(p.sku) : "No SKU")}
       </td>
       <td><span class="badge badge-category">${esc(p.category)}</span></td>
       <td>${fmt.format(p.price)}</td>
@@ -594,7 +636,7 @@ function cartQtyInCart(productId) {
 function renderQuickPick() {
   const grid = document.getElementById("quick-pick-grid");
   if (!state.products.length) {
-    grid.innerHTML = '<div class="empty-state">Add products first</div>';
+    grid.innerHTML = emptyState(UI_ICONS.box, "No products", "Add products to start selling.");
     return;
   }
 
@@ -603,8 +645,10 @@ function renderQuickPick() {
       const inCart = cartQtyInCart(p.id);
       const available = p.quantity - inCart;
       const disabled = p.quantity <= 0 || available <= 0;
+      const accent = categoryAccent(p.category);
       return `
     <button type="button" class="quick-pick-item ${disabled ? "out-of-stock" : ""} ${inCart ? "in-cart" : ""}"
+      style="--qp-accent: ${accent}"
       ${disabled ? "disabled" : `onclick="addToCart(${p.id}, 1)"`}>
       <strong>${esc(p.name)}</strong>
       <span>${esc(p.category)} · ${p.quantity} left</span>
@@ -913,7 +957,7 @@ async function loadHistory() {
 function renderHistory(transactions) {
   const tbody = document.getElementById("history-table-body");
   if (!transactions.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No transactions yet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">${emptyState(UI_ICONS.clock, "No transactions", "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
     return;
   }
 
@@ -923,10 +967,7 @@ function renderHistory(transactions) {
     <tr>
       <td>${formatDate(t.created_at)}</td>
       <td>
-        <div class="product-cell">
-          <strong>${esc(t.product_name)}</strong>
-          <span>${esc(t.category)}</span>
-        </div>
+        ${productCell(t.product_name, esc(t.category))}
       </td>
       <td>${typeBadge(t.type)}</td>
       <td>${t.type === "sale" ? "−" : "+"}${t.quantity}</td>
@@ -993,37 +1034,22 @@ function renderSalesReport(report) {
   const { summary, daily_breakdown, sales, from, to } = report;
 
   document.getElementById("sales-summary-stats").innerHTML = `
-    <div class="stat-card revenue">
-      <div class="stat-label">Total Revenue</div>
-      <div class="stat-value">${fmt.format(summary.revenue)}</div>
-      <div class="stat-sub">${formatRangeLabel(from, to)}</div>
-    </div>
-    <div class="stat-card sales">
-      <div class="stat-label">Units Sold</div>
-      <div class="stat-value">${fmtNum.format(summary.units)}</div>
-      <div class="stat-sub">items in this period</div>
-    </div>
-    <div class="stat-card stock">
-      <div class="stat-label">Transactions</div>
-      <div class="stat-value">${fmtNum.format(summary.transactions)}</div>
-      <div class="stat-sub">sales recorded</div>
-    </div>
-    <div class="stat-card alert">
-      <div class="stat-label">Active Days</div>
-      <div class="stat-value">${daily_breakdown.length}</div>
-      <div class="stat-sub">days with sales</div>
-    </div>
+    ${statCard("revenue", UI_ICONS.revenue, "Total Revenue", fmt.format(summary.revenue), formatRangeLabel(from, to))}
+    ${statCard("sales", UI_ICONS.sales, "Units Sold", fmtNum.format(summary.units), "items in this period")}
+    ${statCard("stock", UI_ICONS.chart, "Transactions", fmtNum.format(summary.transactions), "sales recorded")}
+    ${statCard("alert", UI_ICONS.calendar, "Active Days", daily_breakdown.length, "days with sales")}
   `;
 
   document.getElementById("sales-range-label").textContent = formatRangeLabel(from, to);
 
   const datesList = document.getElementById("sales-dates-list");
   if (!daily_breakdown.length) {
-    datesList.innerHTML = '<div class="empty-state">No sales in this period</div>';
+    datesList.innerHTML = emptyState(UI_ICONS.chart, "No sales", "No sales recorded in this period.");
     renderSalesDetail([], null);
     return;
   }
 
+  const maxRevenue = Math.max(...daily_breakdown.map((d) => d.revenue), 1);
   datesList.innerHTML = daily_breakdown
     .map(
       (day) => `
@@ -1034,6 +1060,7 @@ function renderSalesReport(report) {
         <span>${fmtNum.format(day.transactions)} sale${day.transactions !== 1 ? "s" : ""} · ${fmtNum.format(day.units)} units</span>
       </div>
       <div class="sales-date-revenue">${fmt.format(day.revenue)}</div>
+      <div class="sales-date-bar" style="width:${(day.revenue / maxRevenue) * 100}%"></div>
     </button>`
     )
     .join("");
@@ -1062,7 +1089,7 @@ function renderSalesDetail(sales, date, from, to) {
   }
 
   if (!sales.length) {
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No sales to show</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
     return;
   }
 
@@ -1072,10 +1099,7 @@ function renderSalesDetail(sales, date, from, to) {
     <tr>
       <td>${formatTime(s.created_at)}</td>
       <td>
-        <div class="product-cell">
-          <strong>${esc(s.product_name)}</strong>
-          <span>${esc(s.category)}</span>
-        </div>
+        ${productCell(s.product_name, esc(s.category))}
       </td>
       <td>${s.quantity}</td>
       <td><strong>${fmt.format(s.total_amount)}</strong></td>
@@ -1402,18 +1426,26 @@ function hideModal(id) {
 // ── Init ───────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("current-date").textContent = new Date().toLocaleDateString("en-RW", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const dateEl = document.getElementById("current-date");
+  if (dateEl) {
+    dateEl.innerHTML = `${UI_ICONS.calendar}<span>${new Date().toLocaleDateString("en-RW", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    })}</span>`;
+  }
 
   initNavigation();
   initSalesReports();
   initPosShortcuts();
 
   loadCategories().then(() => loadDashboard());
+
+  document.getElementById("btn-quick-add-product")?.addEventListener("click", () => {
+    switchView("products");
+    setTimeout(openAddProduct, 150);
+  });
 
   document.getElementById("btn-add-product").addEventListener("click", openAddProduct);
   document.getElementById("product-form").addEventListener("submit", saveProduct);
@@ -1440,6 +1472,15 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("adjust-form").addEventListener("submit", submitAdjust);
 
   document.getElementById("history-type-filter").addEventListener("change", loadHistory);
+
+  document.querySelectorAll("#history-filter-chips .filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll("#history-filter-chips .filter-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      document.getElementById("history-type-filter").value = chip.dataset.type;
+      loadHistory();
+    });
+  });
 
   document.getElementById("btn-logout")?.addEventListener("click", logout);
   document.getElementById("btn-add-user")?.addEventListener("click", openAddUser);
