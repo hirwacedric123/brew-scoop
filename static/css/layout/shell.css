@@ -1,6 +1,5 @@
 /* layout/shell.css */
 
-/* Main */
 .app-main {
   flex: 1;
   display: flex;
@@ -11,8 +10,8 @@
 .main {
   flex: 1;
   margin-left: var(--sidebar-width);
-  padding: 1.75rem 2rem 2.5rem;
-  max-width: 1400px;
+  padding: 2rem 2.25rem 2.75rem;
+  max-width: 1440px;
   width: 100%;
 }
 
@@ -36,7 +35,8 @@
 }
 
 #btn-pos-mode.active {
-  background: var(--latte);
+  background: linear-gradient(135deg, var(--latte), var(--cream));
   color: var(--coffee);
   border-color: var(--caramel);
+  box-shadow: var(--shadow-xs);
 }
