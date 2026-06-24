@@ -1,12 +1,12 @@
 /* components/rank.css */
 
-/* Top products ranking */
 .rank-item {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.65rem 0;
-  border-bottom: 1px solid var(--border);
+  gap: 0.9rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--transition);
 }
 
 .rank-item:last-child {
@@ -16,37 +16,41 @@
 .rank-num {
   width: 28px;
   height: 28px;
-  background: var(--latte);
+  background: linear-gradient(135deg, var(--latte), var(--cream));
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--coffee);
   flex-shrink: 0;
+  border: 1px solid rgba(196, 165, 116, 0.25);
 }
 
-.rank-num.gold { background: #f0d78c; color: #7a5c10; }
-.rank-num.silver { background: #d8d8d8; color: #555; }
-.rank-num.bronze { background: #ddb892; color: #6b4423; }
+.rank-num.gold { background: linear-gradient(135deg, #f0d78c, #e8c86a); color: #7a5c10; border-color: rgba(122, 92, 16, 0.2); }
+.rank-num.silver { background: linear-gradient(135deg, #e8e8e8, #d0d0d0); color: #555; border-color: rgba(85, 85, 85, 0.15); }
+.rank-num.bronze { background: linear-gradient(135deg, #ddb892, #c9a070); color: #6b4423; border-color: rgba(107, 68, 35, 0.2); }
 
 .rank-info {
   flex: 1;
+  min-width: 0;
 }
 
 .rank-info strong {
   display: block;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .rank-info span {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-muted);
 }
 
 .rank-revenue {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--coffee);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
+  font-family: var(--font-display);
 }
