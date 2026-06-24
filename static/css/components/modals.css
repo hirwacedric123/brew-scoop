@@ -1,42 +1,46 @@
 /* components/modals.css */
 
-/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(44, 24, 16, 0.5);
-  backdrop-filter: blur(4px);
+  background: rgba(44, 24, 16, 0.45);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
   padding: 1rem;
-  animation: fadeIn 0.2s ease;
+  animation: overlayIn 0.25s ease;
 }
 
 .modal-overlay[hidden] {
   display: none;
 }
 
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .modal {
   background: white;
   border-radius: var(--radius);
-  box-shadow: 0 24px 80px rgba(44, 24, 16, 0.2);
-  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border-subtle);
   width: 100%;
   max-width: 520px;
   max-height: 90vh;
   overflow-y: auto;
-  animation: slideUp 0.3s ease;
+  animation: modalIn 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 .modal-sm {
   max-width: 400px;
 }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .modal-header {
@@ -44,22 +48,33 @@
   justify-content: space-between;
   align-items: center;
   padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(to bottom, white, rgba(250, 246, 241, 0.4));
 }
 
 .modal-header h3 {
   font-family: var(--font-display);
-  font-size: 1.2rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .modal-close {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
+  background: var(--foam);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  font-size: 1.25rem;
   color: var(--text-muted);
   cursor: pointer;
   line-height: 1;
-  padding: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  transition: all var(--transition);
+}
+
+.modal-close:hover {
+  background: var(--danger-light);
+  color: var(--danger);
+  border-color: rgba(196, 92, 74, 0.3);
 }
 
 .modal form {
@@ -70,7 +85,8 @@
   display: flex;
   justify-content: flex-end;
   gap: 0.65rem;
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
 }
 
 .restock-product-name {
@@ -89,6 +105,10 @@
   height: 64px;
   margin: 0 auto 1rem;
   color: var(--success);
+  background: linear-gradient(135deg, #eef5f0, #f5faf6);
+  border-radius: 50%;
+  padding: 0.75rem;
+  box-shadow: var(--shadow);
 }
 
 .success-icon svg {
@@ -98,21 +118,28 @@
 
 .sale-success h3 {
   font-family: var(--font-display);
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   margin-bottom: 1rem;
+  letter-spacing: -0.01em;
 }
 
 #sale-success-details {
-  background: var(--foam);
+  background: linear-gradient(135deg, var(--foam), white);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 1rem;
+  padding: 1rem 1.15rem;
   margin-bottom: 1.25rem;
   text-align: left;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 #sale-success-details p {
   display: flex;
   justify-content: space-between;
-  padding: 0.3rem 0;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+#sale-success-details p:last-child {
+  border-bottom: none;
 }

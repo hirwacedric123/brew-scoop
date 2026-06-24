@@ -1,23 +1,37 @@
 /* components/forms.css */
 
 select {
-  padding: 0.65rem 1rem;
-  border: 1px solid var(--border);
+  padding: 0.65rem 2rem 0.65rem 1rem;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
-  font-size: 0.88rem;
-  background: white;
+  font-size: 0.875rem;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237a6a5e' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 0.75rem center;
   color: var(--text);
   cursor: pointer;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-xs);
+  appearance: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+select:hover {
+  border-color: var(--border);
 }
 
 .checkbox-label {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.45rem;
   font-size: 0.85rem;
   color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--coffee);
   cursor: pointer;
 }
 
@@ -27,32 +41,37 @@ select {
 
 .form-group label {
   display: block;
-  font-size: 0.82rem;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 0.4rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .form-group input,
 .form-group select,
 .form-group textarea {
   width: 100%;
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--border);
+  padding: 0.72rem 0.95rem;
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
   font-size: 0.9rem;
   background: var(--foam);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+
+.form-group select {
+  background-color: var(--foam);
 }
 
 .btn:focus-visible,
 .nav-item:focus-visible,
 .filter-chip:focus-visible,
 .quick-action:focus-visible,
-.period-btn:focus-visible {
+.period-btn:focus-visible,
+.admin-tab:focus-visible {
   outline: 2px solid var(--caramel);
   outline-offset: 2px;
 }
@@ -62,7 +81,7 @@ select {
 .form-group textarea:focus {
   outline: none;
   border-color: var(--caramel);
-  box-shadow: 0 0 0 3px rgba(196, 165, 116, 0.2);
+  box-shadow: 0 0 0 3px rgba(196, 165, 116, 0.18);
   background: white;
 }
 
@@ -73,10 +92,10 @@ select {
 }
 
 .product-preview {
-  background: var(--foam);
-  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--foam), white);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 0.85rem 1rem;
+  padding: 0.9rem 1.1rem;
   margin-bottom: 1.1rem;
 }
 
@@ -84,21 +103,27 @@ select {
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  padding: 0.3rem 0;
+  padding: 0.32rem 0;
 }
 
 .preview-row span {
   color: var(--text-muted);
 }
 
+.preview-row strong {
+  font-weight: 600;
+  color: var(--coffee);
+}
+
 .qty-input {
   display: flex;
   align-items: center;
   gap: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: white;
+  box-shadow: var(--shadow-xs);
 }
 
 .qty-btn {
@@ -106,26 +131,28 @@ select {
   height: 44px;
   border: none;
   background: var(--foam);
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   cursor: pointer;
   color: var(--coffee);
-  transition: background 0.15s;
+  transition: background var(--transition), color var(--transition);
 }
 
 .qty-btn:hover {
   background: var(--latte);
+  color: var(--espresso);
 }
 
 .qty-input input {
   flex: 1;
   text-align: center;
   border: none;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-  font-size: 1.1rem;
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  font-size: 1.05rem;
   font-weight: 600;
   padding: 0.5rem;
   font-family: var(--font-body);
+  background: white;
   -moz-appearance: textfield;
 }
 
@@ -140,19 +167,24 @@ select {
 
 .input-with-icon svg {
   position: absolute;
-  left: 0.9rem;
+  left: 0.95rem;
   top: 50%;
   transform: translateY(-50%);
   width: 18px;
   height: 18px;
-  color: var(--text-muted);
+  color: var(--text-subtle);
   pointer-events: none;
+  transition: color var(--transition);
+}
+
+.input-with-icon:focus-within svg {
+  color: var(--caramel);
 }
 
 .input-with-icon input {
-  padding-left: 2.6rem !important;
+  padding-left: 2.65rem !important;
 }
 
 .login-form .form-group {
-  margin-bottom: 1.1rem;
+  margin-bottom: 1.15rem;
 }

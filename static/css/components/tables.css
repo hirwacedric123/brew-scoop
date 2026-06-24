@@ -1,28 +1,27 @@
 /* components/tables.css */
 
-/* Table */
 .table-wrap {
-  background: white;
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
 
 .table-premium .data-table th {
-  background: linear-gradient(to bottom, white, var(--foam));
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
+  background: linear-gradient(to bottom, white, rgba(250, 246, 241, 0.8));
+  font-size: 0.68rem;
+  letter-spacing: 0.09em;
 }
 
 .table-premium .data-table td:first-child,
 .table-premium .data-table th:first-child {
-  padding-left: 1.35rem;
+  padding-left: 1.4rem;
 }
 
 .table-premium .data-table td:last-child,
 .table-premium .data-table th:last-child {
-  padding-right: 1.35rem;
+  padding-right: 1.4rem;
 }
 
 .data-table {
@@ -32,20 +31,21 @@
 
 .data-table th {
   text-align: left;
-  padding: 0.85rem 1.15rem;
-  font-size: 0.72rem;
+  padding: 0.9rem 1.15rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--text-muted);
-  background: var(--foam);
-  border-bottom: 1px solid var(--border);
+  background: rgba(250, 246, 241, 0.6);
+  border-bottom: 1px solid var(--border-subtle);
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .data-table td {
-  padding: 0.85rem 1.15rem;
-  font-size: 0.88rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.9rem 1.15rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
 }
 
@@ -58,11 +58,11 @@
 }
 
 .data-table tbody tr:nth-child(even) {
-  background: rgba(250, 246, 241, 0.6);
+  background: rgba(250, 246, 241, 0.45);
 }
 
 .data-table tbody tr:hover {
-  background: rgba(245, 230, 211, 0.4);
+  background: rgba(245, 230, 211, 0.35);
 }
 
 .product-cell {
@@ -81,9 +81,10 @@
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   flex-shrink: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-xs);
 }
 
 .product-cell-text {
@@ -95,10 +96,11 @@
 .product-cell strong,
 .product-cell-text strong {
   font-weight: 600;
+  font-size: 0.875rem;
 }
 
 .product-cell span,
 .product-cell-text span {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   color: var(--text-muted);
 }
