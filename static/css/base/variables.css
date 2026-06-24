@@ -5,9 +5,12 @@
   --espresso-light: #3d2618;
   --coffee: #5d4037;
   --caramel: #c4a574;
+  --caramel-light: #d4b88a;
   --cream: #f5e6d3;
   --latte: #e8d5b7;
   --foam: #faf6f1;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
   --mint: #6b8f71;
   --mint-light: #8fb396;
   --amber: #d4a03c;
@@ -18,14 +21,36 @@
   --success: #5a8f6a;
   --text: #2c1810;
   --text-muted: #7a6a5e;
+  --text-subtle: #a89888;
   --border: #e8ddd0;
-  --shadow: 0 4px 24px rgba(44, 24, 16, 0.08);
-  --shadow-lg: 0 12px 48px rgba(44, 24, 16, 0.12);
-  --shadow-hover: 0 8px 32px rgba(44, 24, 16, 0.12);
-  --radius: 14px;
-  --radius-sm: 8px;
-  --sidebar-width: 260px;
+  --border-subtle: rgba(232, 221, 208, 0.65);
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px rgba(44, 24, 16, 0.04);
+  --shadow: 0 1px 3px rgba(44, 24, 16, 0.05), 0 4px 20px rgba(44, 24, 16, 0.06);
+  --shadow-md: 0 2px 6px rgba(44, 24, 16, 0.05), 0 8px 28px rgba(44, 24, 16, 0.08);
+  --shadow-lg: 0 8px 32px rgba(44, 24, 16, 0.1), 0 24px 64px rgba(44, 24, 16, 0.08);
+  --shadow-hover: 0 4px 12px rgba(44, 24, 16, 0.07), 0 12px 36px rgba(44, 24, 16, 0.1);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+
+  /* Glass */
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(232, 221, 208, 0.6);
+  --glass-blur: blur(16px);
+
+  /* Radius */
+  --radius: 16px;
+  --radius-sm: 10px;
+  --radius-xs: 6px;
+
+  /* Layout */
+  --sidebar-width: 264px;
+
+  /* Typography */
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
-  --transition: 0.2s ease;
+
+  /* Motion */
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
