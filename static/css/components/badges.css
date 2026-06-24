@@ -1,33 +1,38 @@
 /* components/badges.css */
 
-/* Badges */
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.2rem 0.6rem;
+  padding: 0.22rem 0.65rem;
   border-radius: 999px;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
 }
 
 .badge-category {
-  background: var(--latte);
+  background: linear-gradient(135deg, var(--latte), rgba(232, 213, 183, 0.6));
   color: var(--coffee);
+  border-color: rgba(196, 165, 116, 0.25);
 }
 
 .badge-stock {
-  background: var(--mint-light);
+  background: linear-gradient(135deg, #eef5f0, #f5faf6);
   color: #2d4a32;
+  border-color: rgba(107, 143, 113, 0.2);
 }
 
 .badge-stock.low {
-  background: var(--warning-light);
+  background: linear-gradient(135deg, var(--warning-light), #fff9ee);
   color: #8a6010;
+  border-color: rgba(212, 160, 60, 0.25);
 }
 
 .badge-stock.out {
-  background: var(--danger-light);
+  background: linear-gradient(135deg, var(--danger-light), #fff5f3);
   color: var(--danger);
+  border-color: rgba(196, 92, 74, 0.2);
 }
 
 .badge-warning {
@@ -36,16 +41,19 @@
 }
 
 .badge-sale {
-  background: #e8f0ea;
+  background: linear-gradient(135deg, #e8f0ea, #f0f7f2);
   color: var(--success);
+  border-color: rgba(90, 143, 106, 0.2);
 }
 
 .badge-restock {
-  background: #e8eef8;
+  background: linear-gradient(135deg, #e8eef8, #f0f4fa);
   color: #3d5a80;
+  border-color: rgba(61, 90, 128, 0.15);
 }
 
 .badge-adjustment {
-  background: var(--latte);
+  background: linear-gradient(135deg, var(--latte), rgba(232, 213, 183, 0.5));
   color: var(--coffee);
+  border-color: rgba(196, 165, 116, 0.2);
 }

@@ -1,86 +1,104 @@
 /* components/buttons.css */
 
-/* Buttons */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  padding: 0.6rem 1.15rem;
+  padding: 0.6rem 1.2rem;
   border: none;
   border-radius: var(--radius-sm);
   font-family: var(--font-body);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--transition);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .btn svg {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--coffee), var(--espresso-light));
+  background: linear-gradient(135deg, var(--coffee) 0%, var(--espresso-light) 100%);
   color: var(--cream);
-  box-shadow: 0 4px 12px rgba(44, 24, 16, 0.25);
+  box-shadow: 0 2px 8px rgba(44, 24, 16, 0.2), 0 4px 16px rgba(44, 24, 16, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(44, 24, 16, 0.3);
+  box-shadow: 0 4px 12px rgba(44, 24, 16, 0.25), 0 8px 24px rgba(44, 24, 16, 0.15);
 }
 
 .btn-primary:active {
   transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(44, 24, 16, 0.2);
 }
 
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+  box-shadow: none !important;
 }
 
 .btn-ghost {
-  background: transparent;
+  background: var(--surface);
   color: var(--text-muted);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-xs);
 }
 
 .btn-ghost:hover {
   background: var(--foam);
+  color: var(--coffee);
+  border-color: var(--border);
 }
 
 .btn-sm {
-  padding: 0.35rem 0.65rem;
+  padding: 0.38rem 0.75rem;
   font-size: 0.78rem;
 }
 
 .btn-icon {
-  padding: 0.4rem;
-  background: transparent;
-  border: 1px solid var(--border);
+  padding: 0.42rem;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--transition);
+  box-shadow: var(--shadow-xs);
 }
 
 .btn-icon:hover {
   background: var(--foam);
   color: var(--coffee);
+  border-color: var(--border);
 }
 
 .btn-icon.danger:hover {
   background: var(--danger-light);
   color: var(--danger);
-  border-color: var(--danger);
+  border-color: rgba(196, 92, 74, 0.35);
 }
 
 .btn-lg {
   padding: 0.85rem 1.5rem;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
 .btn-block {

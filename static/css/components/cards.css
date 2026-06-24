@@ -1,19 +1,18 @@
 /* components/cards.css */
 
-/* Cards */
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
 .card {
-  background: white;
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
-  transition: box-shadow var(--transition);
+  transition: box-shadow var(--transition), transform var(--transition);
 }
 
 .card:hover {
@@ -40,19 +39,20 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.1rem 1.35rem;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(to bottom, white, var(--foam));
+  padding: 1rem 1.35rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: linear-gradient(to bottom, white, rgba(250, 246, 241, 0.5));
 }
 
 .card-header h3 {
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .card-body {
-  padding: 1rem 1.35rem 1.25rem;
+  padding: 1.1rem 1.35rem 1.35rem;
 }
 
 .text-muted {
@@ -60,20 +60,19 @@
   color: var(--text-muted);
 }
 
-/* List items */
 .list-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 0.5rem;
+  padding: 0.8rem 0.5rem;
   margin: 0 -0.5rem;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
   transition: background var(--transition);
 }
 
 .list-item:hover {
-  background: rgba(245, 230, 211, 0.35);
+  background: rgba(245, 230, 211, 0.3);
 }
 
 .list-item:last-child {
@@ -82,46 +81,52 @@
 
 .list-item-info strong {
   display: block;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
 }
 
 .list-item-info span {
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   color: var(--text-muted);
 }
 
 .empty-state {
   text-align: center;
-  padding: 2.5rem 1.5rem;
+  padding: 2.75rem 1.5rem;
   color: var(--text-muted);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 .empty-state-icon {
-  width: 52px;
-  height: 52px;
-  margin: 0 auto 0.85rem;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 1rem;
   border-radius: 50%;
-  background: var(--foam);
+  background: linear-gradient(135deg, var(--foam), white);
+  border: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--caramel);
+  box-shadow: var(--shadow-xs);
 }
 
 .empty-state-icon svg {
   width: 26px;
   height: 26px;
+  opacity: 0.8;
 }
 
 .empty-state strong {
   display: block;
   color: var(--text);
   font-size: 0.95rem;
-  margin-bottom: 0.25rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
 }
 
 .empty-state p {
   margin: 0;
   line-height: 1.5;
+  color: var(--text-subtle);
 }
