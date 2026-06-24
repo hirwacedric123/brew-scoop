@@ -164,7 +164,7 @@ def _seed_default_admin(db):
         return
 
     username = os.environ.get("BREW_SCOOP_ADMIN_USERNAME", "admin")
-    password = os.environ.get("BREW_SCOOP_ADMIN_PASSWORD", "admin123")
+    password = os.environ.get("BREW_SCOOP_ADMIN_PASSWORD", "admin@123")
     display_name = os.environ.get("BREW_SCOOP_ADMIN_NAME", "Administrator")
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
