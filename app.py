@@ -1165,6 +1165,18 @@ def _seller_sales_for_shift(db, shift_id):
     }
 
 
+def _shift_sales_for_response(db, shift_id):
+    rows = db.execute(
+        """SELECT t.*, p.name AS product_name, p.category
+           FROM transactions t
+           JOIN products p ON p.id = t.product_id
+           WHERE t.type = 'sale' AND t.shift_id = ?
+           ORDER BY t.created_at DESC, t.id DESC""",
+        (shift_id,),
+    ).fetchall()
+    return [row_to_transaction(r) for r in rows]
+
+
 def _row_to_shift(row, include_close=False):
     data = {
         "id": row["id"],
@@ -1187,6 +1199,13 @@ def _row_to_shift(row, include_close=False):
             "sale_count": row["sale_count"] or 0,
             "status_label": _shift_variance_status(row["variance"] or 0),
         })
+    return data
+
+
+def _shift_with_sales(db, row, include_close=False):
+    data = _row_to_shift(row, include_close=include_close)
+    if include_close or row["status"] == "closed":
+        data["sales"] = _shift_sales_for_response(db, row["id"])
     return data
 
 
@@ -1240,7 +1259,7 @@ def seller_shift_status():
 
     payload = {"has_open_shift": False}
     if last_closed:
-        payload["last_closed"] = _row_to_shift(last_closed, include_close=True)
+        payload["last_closed"] = _shift_with_sales(db, last_closed, include_close=True)
     return jsonify(payload)
 
 
@@ -1326,7 +1345,7 @@ def seller_shift_close():
         "SELECT * FROM seller_shifts WHERE id = ?",
         (shift["id"],),
     ).fetchone()
-    closed = _row_to_shift(row, include_close=True)
+    closed = _shift_with_sales(db, row, include_close=True)
     message = _shift_close_message(row)
     return jsonify({
         "has_open_shift": False,

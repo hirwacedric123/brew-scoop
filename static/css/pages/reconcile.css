@@ -987,6 +987,131 @@
   filter: grayscale(0.1);
 }
 
+/* ── Shift sales history (after close) ───────────────────────────────────── */
+
+.shift-sales-history {
+  padding: 1.15rem 1.25rem;
+  border-radius: var(--radius-sm);
+  background: white;
+  border: 1px solid var(--border-subtle);
+}
+
+.shift-sales-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.shift-sales-head h4,
+.shift-sales-history > h4 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+}
+
+.shift-sales-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.shift-sales-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.shift-sale-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted, #faf8f5);
+  overflow: hidden;
+}
+
+.shift-sale-card-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: white;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.shift-sale-time {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.shift-sale-pay {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.shift-sale-total {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.shift-sale-items {
+  list-style: none;
+  margin: 0;
+  padding: 0.45rem 0.85rem 0.55rem;
+}
+
+.shift-sale-items li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.35rem 0.65rem;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  font-size: 0.84rem;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+}
+
+.shift-sale-items li:last-child {
+  border-bottom: none;
+}
+
+.shift-sale-item-name {
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shift-sale-item-qty {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.shift-sale-item-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.shift-sales-history .empty-state {
+  padding: 1.25rem 0.5rem;
+}
+
 /* ── Layout modes ────────────────────────────────────────────────────────── */
 
 .shift-panels.is-idle {

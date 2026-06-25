@@ -1229,6 +1229,75 @@ function updateShiftSteps(activeStep) {
   });
 }
 
+function groupShiftSalesByCheckout(sales) {
+  if (!sales?.length) return [];
+  const groups = new Map();
+  for (const sale of sales) {
+    const key = sale.checkout_ref || `line-${sale.id}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        created_at: sale.created_at,
+        payment_method: sale.payment_method,
+        items: [],
+        total: 0,
+      });
+    }
+    const group = groups.get(key);
+    group.items.push(sale);
+    group.total += sale.total_amount;
+  }
+  return [...groups.values()];
+}
+
+function renderShiftSalesHistory(sales) {
+  if (!sales?.length) {
+    return `
+      <div class="shift-sales-history">
+        <h4>Sales this shift</h4>
+        ${emptyState(UI_ICONS.sales, "No sales", "No sales were recorded during this shift.", true)}
+      </div>
+    `;
+  }
+
+  const groups = groupShiftSalesByCheckout(sales);
+  const saleCount = sales.length;
+
+  return `
+    <div class="shift-sales-history">
+      <div class="shift-sales-head">
+        <h4>Sales this shift</h4>
+        <span class="shift-sales-meta">${saleCount} line${saleCount === 1 ? "" : "s"} · ${groups.length} checkout${groups.length === 1 ? "" : "s"}</span>
+      </div>
+      <div class="shift-sales-list">
+        ${groups
+          .map(
+            (group) => `
+          <article class="shift-sale-card">
+            <div class="shift-sale-card-head">
+              <span class="shift-sale-time">${esc(formatTime(group.created_at))}</span>
+              <span class="shift-sale-pay">${esc(paymentMethodLabel(group.payment_method))}</span>
+              <strong class="shift-sale-total">${fmt.format(group.total)}</strong>
+            </div>
+            <ul class="shift-sale-items">
+              ${group.items
+                .map(
+                  (item) => `
+                <li>
+                  <span class="shift-sale-item-name">${esc(item.product_name)}</span>
+                  <span class="shift-sale-item-qty">× ${item.quantity}</span>
+                  <span class="shift-sale-item-amount">${fmt.format(item.total_amount)}</span>
+                </li>`
+                )
+                .join("")}
+            </ul>
+          </article>`
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
+}
+
 function renderShiftSummary(shift, message) {
   const resultEl = document.getElementById("reconcile-result");
   if (!resultEl || !shift) return;
@@ -1274,6 +1343,7 @@ function renderShiftSummary(shift, message) {
             ${renderPaymentRow("MoMo", shift.momo_sales, payTotal, "momo")}
             ${renderPaymentRow("Visa", shift.visa_sales, payTotal, "visa")}
           </div>
+          ${renderShiftSalesHistory(shift.sales)}
         </div>
       </div>
       <p class="reconcile-closed-note">Shift closed — start a new one when you are ready to sell again.</p>
