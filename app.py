@@ -33,16 +33,24 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 KIGALI_OFFSET = timedelta(hours=2)
 
-DEFAULT_CATEGORIES = [
-    "Coffee",
-    "Tea",
-    "Juice",
-    "Water",
-    "Energy Drinks",
-    "Ice Cream",
-    "Chapati",
-    "Other",
-]
+PAYMENT_METHODS = {
+    "momo": "MoMo",
+    "cash": "Cash",
+    "visa": "Visa",
+}
+
+DEFAULT_CATEGORIES = (
+    {"name": "Shared Cups", "uses_cup_stock": 1, "sort_order": 0},
+    {"name": "Individuals", "uses_cup_stock": 0, "sort_order": 1},
+)
+DEFAULT_CATEGORY_NAMES = frozenset(c["name"] for c in DEFAULT_CATEGORIES)
+
+
+def is_default_category(name):
+    if not name:
+        return False
+    lowered = name.casefold()
+    return any(n.casefold() == lowered for n in DEFAULT_CATEGORY_NAMES)
 
 
 def get_db():
@@ -68,7 +76,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
-            category TEXT NOT NULL DEFAULT 'Other',
+            category TEXT NOT NULL,
             price REAL NOT NULL CHECK(price >= 0),
             quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
             reorder_level INTEGER NOT NULL DEFAULT 10 CHECK(reorder_level >= 0),
@@ -87,6 +95,8 @@ def init_db():
             total_amount REAL NOT NULL,
             notes TEXT,
             created_at TEXT NOT NULL,
+            checkout_ref TEXT,
+            payment_method TEXT,
             FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
         );
 
@@ -95,8 +105,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
         """
     )
-    _migrate_db(db)
     _init_categories_table(db)
+    _migrate_db(db)
     _seed_categories(db)
     init_users_table(db)
     _seed_default_admin(db)
@@ -108,9 +118,46 @@ def _migrate_db(db):
     cols = {row[1] for row in db.execute("PRAGMA table_info(transactions)").fetchall()}
     if "checkout_ref" not in cols:
         db.execute("ALTER TABLE transactions ADD COLUMN checkout_ref TEXT")
+    if "payment_method" not in cols:
+        db.execute("ALTER TABLE transactions ADD COLUMN payment_method TEXT")
     db.execute(
         "CREATE INDEX IF NOT EXISTS idx_transactions_checkout ON transactions(checkout_ref)"
     )
+
+    cat_cols = set()
+    if db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='categories'"
+    ).fetchone():
+        cat_cols = {row[1] for row in db.execute("PRAGMA table_info(categories)").fetchall()}
+    if "uses_cup_stock" not in cat_cols:
+        db.execute(
+            "ALTER TABLE categories ADD COLUMN uses_cup_stock INTEGER NOT NULL DEFAULT 0"
+        )
+
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS cup_inventory (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+            reorder_level INTEGER NOT NULL DEFAULT 20 CHECK(reorder_level >= 0),
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS cup_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL CHECK(type IN ('restock', 'adjustment', 'sale')),
+            quantity INTEGER NOT NULL,
+            notes TEXT,
+            checkout_ref TEXT,
+            created_at TEXT NOT NULL
+        );
+        """
+    )
+    if not db.execute("SELECT 1 FROM cup_inventory WHERE id = 1").fetchone():
+        db.execute(
+            "INSERT INTO cup_inventory (id, quantity, reorder_level, updated_at) VALUES (1, 0, 20, ?)",
+            (now_iso(),),
+        )
 
 
 def _init_categories_table(db):
@@ -129,15 +176,17 @@ def _init_categories_table(db):
 
 
 def _seed_categories(db):
-    count = db.execute("SELECT COUNT(*) AS n FROM categories").fetchone()["n"]
-    if count > 0:
-        return
-
     ts = now_iso()
-    for index, name in enumerate(DEFAULT_CATEGORIES):
+    for cat in DEFAULT_CATEGORIES:
+        existing = db.execute(
+            "SELECT id FROM categories WHERE name = ? COLLATE NOCASE", (cat["name"],)
+        ).fetchone()
+        if existing:
+            continue
         db.execute(
-            "INSERT INTO categories (name, sort_order, created_at) VALUES (?, ?, ?)",
-            (name, index, ts),
+            """INSERT INTO categories (name, sort_order, uses_cup_stock, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (cat["name"], cat["sort_order"], cat["uses_cup_stock"], ts),
         )
 
 
@@ -148,12 +197,49 @@ def get_category_names(db):
     return [row["name"] for row in rows]
 
 
+def get_category_cup_map(db):
+    rows = db.execute("SELECT name, uses_cup_stock FROM categories").fetchall()
+    return {row["name"]: bool(row["uses_cup_stock"]) for row in rows}
+
+
+def category_uses_cups(db, category_name):
+    row = db.execute(
+        "SELECT uses_cup_stock FROM categories WHERE name = ? COLLATE NOCASE",
+        (category_name,),
+    ).fetchone()
+    return bool(row and row["uses_cup_stock"])
+
+
+def get_cup_inventory(db):
+    row = db.execute("SELECT * FROM cup_inventory WHERE id = 1").fetchone()
+    if row is None:
+        ts = now_iso()
+        db.execute(
+            "INSERT INTO cup_inventory (id, quantity, reorder_level, updated_at) VALUES (1, 0, 20, ?)",
+            (ts,),
+        )
+        db.commit()
+        row = db.execute("SELECT * FROM cup_inventory WHERE id = 1").fetchone()
+    return row
+
+
+def row_to_cup_inventory(row):
+    return {
+        "quantity": row["quantity"],
+        "reorder_level": row["reorder_level"],
+        "stock_status": _stock_status(row["quantity"], row["reorder_level"]),
+        "updated_at": row["updated_at"],
+    }
+
+
 def row_to_category(row):
     return {
         "id": row["id"],
         "name": row["name"],
         "sort_order": row["sort_order"],
         "product_count": row["product_count"],
+        "uses_cup_stock": bool(row["uses_cup_stock"]),
+        "is_default": is_default_category(row["name"]),
         "created_at": row["created_at"],
     }
 
@@ -209,20 +295,43 @@ def month_range_kigali():
     return start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d")
 
 
-def row_to_product(row):
+def row_to_product(row, category_cup_map=None, cup_inventory=None):
+    uses_cups = (
+        category_cup_map.get(row["category"], False)
+        if category_cup_map is not None
+        else False
+    )
+    if uses_cups and cup_inventory is not None:
+        effective_qty = cup_inventory["quantity"]
+        reorder = cup_inventory["reorder_level"]
+    else:
+        effective_qty = row["quantity"]
+        reorder = row["reorder_level"]
+
     return {
         "id": row["id"],
         "name": row["name"],
         "category": row["category"],
         "price": round(row["price"], 2),
-        "quantity": row["quantity"],
-        "reorder_level": row["reorder_level"],
-        "sku": row["sku"] or "",
+        "quantity": effective_qty,
+        "reorder_level": reorder,
+        "uses_cup_stock": uses_cups,
         "description": row["description"] or "",
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
-        "stock_status": _stock_status(row["quantity"], row["reorder_level"]),
+        "stock_status": _stock_status(effective_qty, reorder),
     }
+
+
+def _products_response(db, rows, low_only=False):
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
+    products = [
+        row_to_product(row, category_cup_map, cup_inventory) for row in rows
+    ]
+    if low_only:
+        products = [p for p in products if p["stock_status"] in ("low", "out")]
+    return products
 
 
 def _stock_status(quantity, reorder_level):
@@ -245,6 +354,7 @@ def row_to_transaction(row):
         "total_amount": round(row["total_amount"], 2),
         "notes": row["notes"] or "",
         "checkout_ref": row["checkout_ref"] or "",
+        "payment_method": row["payment_method"] or "",
         "created_at": row["created_at"],
         "sale_date": row["created_at"][:10],
     }
@@ -290,6 +400,31 @@ def _daily_sales_breakdown(db, date_from, date_to):
             "transactions": r["transactions"],
         }
         for r in rows
+    ]
+
+
+def _payment_breakdown(db, date_from, date_to):
+    rows = db.execute(
+        """SELECT payment_method,
+                  COALESCE(SUM(total_amount), 0) AS revenue,
+                  COUNT(DISTINCT checkout_ref) AS checkouts
+           FROM transactions
+           WHERE type = 'sale'
+             AND payment_method IS NOT NULL
+             AND substr(created_at, 1, 10) >= ?
+             AND substr(created_at, 1, 10) <= ?
+           GROUP BY payment_method""",
+        (date_from, date_to),
+    ).fetchall()
+    totals = {row["payment_method"]: row for row in rows}
+    return [
+        {
+            "method": method,
+            "label": label,
+            "revenue": round(totals[method]["revenue"], 2) if method in totals else 0,
+            "checkouts": totals[method]["checkouts"] if method in totals else 0,
+        }
+        for method, label in PAYMENT_METHODS.items()
     ]
 
 
@@ -470,27 +605,28 @@ def list_products():
     params = []
 
     if search:
-        query += " AND (name LIKE ? OR sku LIKE ? OR description LIKE ?)"
+        query += " AND (name LIKE ? OR description LIKE ?)"
         like = f"%{search}%"
-        params.extend([like, like, like])
+        params.extend([like, like])
     if category:
         query += " AND category = ?"
         params.append(category)
-    if low_only:
-        query += " AND quantity <= reorder_level"
 
     query += " ORDER BY name ASC"
     rows = db.execute(query, params).fetchall()
-    return jsonify([row_to_product(r) for r in rows])
+    return jsonify(_products_response(db, rows, low_only=low_only))
 
 
 @app.route("/api/products/<int:product_id>", methods=["GET"])
 @login_required
 def get_product(product_id):
-    row = get_db().execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+    db = get_db()
+    row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     if not row:
         return jsonify({"error": "Product not found"}), 404
-    return jsonify(row_to_product(row))
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
+    return jsonify(row_to_product(row, category_cup_map, cup_inventory))
 
 
 @app.route("/api/products", methods=["POST"])
@@ -503,39 +639,49 @@ def create_product():
 
     ts = now_iso()
     db = get_db()
+    category = (data.get("category") or "").strip()
+    if not category:
+        return jsonify({"error": "Category is required"}), 400
+
+    uses_cups = category_uses_cups(db, category)
+    quantity = 0 if uses_cups else int(data.get("quantity", 0))
+
     cur = db.execute(
         """INSERT INTO products
            (name, category, price, quantity, reorder_level, sku, description, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             data["name"].strip(),
-            data.get("category", "Other"),
+            category,
             float(data["price"]),
-            int(data.get("quantity", 0)),
+            quantity,
             int(data.get("reorder_level", 10)),
-            (data.get("sku") or "").strip() or None,
+            None,
             (data.get("description") or "").strip() or None,
             ts,
             ts,
         ),
     )
-    if int(data.get("quantity", 0)) > 0:
+    if quantity > 0:
         db.execute(
             """INSERT INTO transactions
                (product_id, type, quantity, unit_price, total_amount, notes, created_at)
                VALUES (?, 'restock', ?, ?, ?, ?, ?)""",
-            (cur.lastrowid, int(data["quantity"]), float(data["price"]),
-             float(data["price"]) * int(data["quantity"]), "Initial stock", ts),
+            (cur.lastrowid, quantity, float(data["price"]),
+             float(data["price"]) * quantity, "Initial stock", ts),
         )
     db.commit()
     row = db.execute("SELECT * FROM products WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return jsonify(row_to_product(row)), 201
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
+    return jsonify(row_to_product(row, category_cup_map, cup_inventory)), 201
 
 
 @app.route("/api/products/<int:product_id>", methods=["PUT"])
 @login_required
 def update_product(product_id):
-    row = get_db().execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+    db = get_db()
+    row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     if not row:
         return jsonify({"error": "Product not found"}), 404
 
@@ -551,8 +697,12 @@ def update_product(product_id):
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid quantity"}), 400
 
+    category = data.get("category", row["category"])
+    uses_cups = category_uses_cups(db, category)
+    if uses_cups:
+        new_quantity = 0
+
     ts = now_iso()
-    db = get_db()
     old_quantity = row["quantity"]
     db.execute(
         """UPDATE products SET
@@ -560,18 +710,18 @@ def update_product(product_id):
            WHERE id=?""",
         (
             data["name"].strip(),
-            data.get("category", row["category"]),
+            category,
             float(data["price"]),
             new_quantity,
             int(data.get("reorder_level", row["reorder_level"])),
-            (data.get("sku") or "").strip() or None,
+            None,
             (data.get("description") or "").strip() or None,
             ts,
             product_id,
         ),
     )
 
-    if new_quantity != old_quantity:
+    if not uses_cups and new_quantity != old_quantity:
         diff = new_quantity - old_quantity
         db.execute(
             """INSERT INTO transactions
@@ -588,7 +738,9 @@ def update_product(product_id):
 
     db.commit()
     updated = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    return jsonify(row_to_product(updated))
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
+    return jsonify(row_to_product(updated, category_cup_map, cup_inventory))
 
 
 @app.route("/api/products/<int:product_id>", methods=["DELETE"])
@@ -624,8 +776,10 @@ def _validate_product(data, partial=False):
                 return "Reorder level cannot be negative"
         except (TypeError, ValueError):
             return "Invalid reorder level"
-    cat = data.get("category", "Other")
-    if cat not in get_category_names(get_db()):
+    category = (data.get("category") or "").strip()
+    if not category:
+        return "Category is required"
+    if category not in get_category_names(get_db()):
         return "Invalid category"
     return None
 
@@ -650,12 +804,18 @@ def _normalize_checkout_items(raw_items):
     return [{"product_id": pid, "quantity": qty} for pid, qty in merged.items()], None
 
 
-def _execute_checkout(db, items, notes=None):
+def _execute_checkout(db, items, notes=None, payment_method=None):
+    method = (payment_method or "").strip().lower()
+    if method not in PAYMENT_METHODS:
+        return None, "Select a payment method: MoMo, Cash, or Visa", 400
+
     checkout_ref = (
         f"CHK-{now_kigali().strftime('%Y%m%d%H%M%S')}-{secrets.token_hex(3).upper()}"
     )
     ts = now_iso()
     notes_text = (notes or "").strip() or None
+    category_cup_map = get_category_cup_map(db)
+    cup_inv = get_cup_inventory(db)
 
     db.execute("BEGIN IMMEDIATE")
     try:
@@ -667,6 +827,7 @@ def _execute_checkout(db, items, notes=None):
         ).fetchall()
         products = {row["id"]: row for row in rows}
 
+        cup_units_needed = 0
         for item in items:
             product_id = item["product_id"]
             quantity = item["quantity"]
@@ -674,16 +835,26 @@ def _execute_checkout(db, items, notes=None):
             if row is None:
                 db.rollback()
                 return None, "Product not found", 404
-            if row["quantity"] < quantity:
+
+            if category_cup_map.get(row["category"], False):
+                cup_units_needed += quantity
+            elif row["quantity"] < quantity:
                 db.rollback()
                 return None, (
                     f"Insufficient stock for {row['name']}. "
                     f"Only {row['quantity']} available."
                 ), 400
 
+        if cup_units_needed > cup_inv["quantity"]:
+            db.rollback()
+            return None, (
+                f"Insufficient cups in stock. Only {cup_inv['quantity']} cup(s) available."
+            ), 400
+
         result_items = []
         total_amount = 0.0
         total_units = 0
+        remaining_cups = cup_inv["quantity"]
 
         for item in items:
             product_id = item["product_id"]
@@ -691,17 +862,23 @@ def _execute_checkout(db, items, notes=None):
             row = products[product_id]
             unit_price = float(row["price"])
             line_total = round(unit_price * quantity, 2)
-            new_qty = row["quantity"] - quantity
+            uses_cups = category_cup_map.get(row["category"], False)
 
-            db.execute(
-                "UPDATE products SET quantity=?, updated_at=? WHERE id=?",
-                (new_qty, ts, product_id),
-            )
+            if uses_cups:
+                remaining_cups -= quantity
+                new_qty = row["quantity"]
+            else:
+                new_qty = row["quantity"] - quantity
+                db.execute(
+                    "UPDATE products SET quantity=?, updated_at=? WHERE id=?",
+                    (new_qty, ts, product_id),
+                )
+
             cur = db.execute(
                 """INSERT INTO transactions
                    (product_id, type, quantity, unit_price, total_amount,
-                    notes, created_at, checkout_ref)
-                   VALUES (?, 'sale', ?, ?, ?, ?, ?, ?)""",
+                    notes, created_at, checkout_ref, payment_method)
+                   VALUES (?, 'sale', ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     product_id,
                     quantity,
@@ -710,31 +887,50 @@ def _execute_checkout(db, items, notes=None):
                     notes_text,
                     ts,
                     checkout_ref,
+                    method,
                 ),
             )
 
             updated = db.execute(
                 "SELECT * FROM products WHERE id = ?", (product_id,)
             ).fetchone()
+            display_product = row_to_product(
+                updated, category_cup_map, {"quantity": remaining_cups, "reorder_level": cup_inv["reorder_level"]}
+            )
             result_items.append({
                 "transaction_id": cur.lastrowid,
-                "product": row_to_product(updated),
+                "product": display_product,
                 "quantity_sold": quantity,
                 "unit_price": unit_price,
                 "total_amount": line_total,
-                "remaining_stock": new_qty,
+                "remaining_stock": remaining_cups if uses_cups else new_qty,
             })
             total_amount += line_total
             total_units += quantity
             products[product_id] = updated
 
+        if cup_units_needed > 0:
+            db.execute(
+                "UPDATE cup_inventory SET quantity=?, updated_at=? WHERE id=1",
+                (remaining_cups, ts),
+            )
+            db.execute(
+                """INSERT INTO cup_transactions
+                   (type, quantity, notes, checkout_ref, created_at)
+                   VALUES ('sale', ?, ?, ?, ?)""",
+                (-cup_units_needed, notes_text, checkout_ref, ts),
+            )
+
         db.commit()
         return {
             "checkout_ref": checkout_ref,
+            "payment_method": method,
+            "payment_label": PAYMENT_METHODS[method],
             "items": result_items,
             "total_amount": round(total_amount, 2),
             "total_units": total_units,
             "line_count": len(result_items),
+            "cups_remaining": remaining_cups,
         }, None, 201
     except Exception:
         db.rollback()
@@ -762,7 +958,9 @@ def create_sale():
         return jsonify({"error": error}), 400
 
     db = get_db()
-    result, error, status = _execute_checkout(db, items, data.get("notes"))
+    result, error, status = _execute_checkout(
+        db, items, data.get("notes"), data.get("payment_method")
+    )
     if error:
         return jsonify({"error": error}), status
 
@@ -775,6 +973,8 @@ def create_sale():
         "unit_price": item["unit_price"],
         "total_amount": item["total_amount"],
         "remaining_stock": item["remaining_stock"],
+        "payment_method": result.get("payment_method"),
+        "payment_label": result.get("payment_label"),
     }), status
 
 
@@ -787,7 +987,9 @@ def checkout_sale():
         return jsonify({"error": error}), 400
 
     db = get_db()
-    result, error, status = _execute_checkout(db, items, data.get("notes"))
+    result, error, status = _execute_checkout(
+        db, items, data.get("notes"), data.get("payment_method")
+    )
     if error:
         return jsonify({"error": error}), status
     return jsonify(result), status
@@ -811,6 +1013,11 @@ def restock_product():
     if not row:
         return jsonify({"error": "Product not found"}), 404
 
+    if category_uses_cups(db, row["category"]):
+        return jsonify({
+            "error": "Cup-based products use shared cup inventory. Restock cups instead."
+        }), 400
+
     ts = now_iso()
     unit_price = float(data.get("unit_price", row["price"]))
     new_qty = row["quantity"] + quantity
@@ -827,7 +1034,9 @@ def restock_product():
     db.commit()
 
     updated = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    return jsonify(row_to_product(updated))
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
+    return jsonify(row_to_product(updated, category_cup_map, cup_inventory))
 
 
 @app.route("/api/adjust", methods=["POST"])
@@ -848,9 +1057,16 @@ def adjust_stock():
     if not row:
         return jsonify({"error": "Product not found"}), 404
 
+    if category_uses_cups(db, row["category"]):
+        return jsonify({
+            "error": "Cup-based products use shared cup inventory. Adjust cups instead."
+        }), 400
+
     diff = new_quantity - row["quantity"]
     if diff == 0:
-        return jsonify(row_to_product(row))
+        category_cup_map = get_category_cup_map(db)
+        cup_inventory = get_cup_inventory(db)
+        return jsonify(row_to_product(row, category_cup_map, cup_inventory))
 
     ts = now_iso()
     db.execute("UPDATE products SET quantity=?, updated_at=? WHERE id=?",
@@ -866,7 +1082,77 @@ def adjust_stock():
     db.commit()
 
     updated = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    return jsonify(row_to_product(updated))
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
+    return jsonify(row_to_product(updated, category_cup_map, cup_inventory))
+
+
+# ── Cup inventory API ────────────────────────────────────────────────────────
+
+@app.route("/api/cups", methods=["GET"])
+@login_required
+def get_cups():
+    return jsonify(row_to_cup_inventory(get_cup_inventory(get_db())))
+
+
+@app.route("/api/cups/restock", methods=["POST"])
+@login_required
+def restock_cups():
+    data = request.get_json(silent=True) or {}
+    try:
+        quantity = int(data.get("quantity", 0))
+        if quantity <= 0:
+            return jsonify({"error": "Quantity must be greater than zero"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid quantity"}), 400
+
+    db = get_db()
+    cup_inv = get_cup_inventory(db)
+    ts = now_iso()
+    new_qty = cup_inv["quantity"] + quantity
+
+    db.execute(
+        "UPDATE cup_inventory SET quantity=?, updated_at=? WHERE id=1",
+        (new_qty, ts),
+    )
+    db.execute(
+        """INSERT INTO cup_transactions (type, quantity, notes, created_at)
+           VALUES ('restock', ?, ?, ?)""",
+        (quantity, (data.get("notes") or "Cup replenishment").strip(), ts),
+    )
+    db.commit()
+    return jsonify(row_to_cup_inventory(get_cup_inventory(db)))
+
+
+@app.route("/api/cups/adjust", methods=["POST"])
+@login_required
+def adjust_cups():
+    data = request.get_json(silent=True) or {}
+    try:
+        new_quantity = int(data.get("new_quantity", -1))
+        if new_quantity < 0:
+            return jsonify({"error": "Quantity cannot be negative"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid quantity"}), 400
+
+    db = get_db()
+    cup_inv = get_cup_inventory(db)
+    diff = new_quantity - cup_inv["quantity"]
+    if diff == 0:
+        return jsonify(row_to_cup_inventory(cup_inv))
+
+    ts = now_iso()
+    db.execute(
+        "UPDATE cup_inventory SET quantity=?, updated_at=? WHERE id=1",
+        (new_quantity, ts),
+    )
+    db.execute(
+        """INSERT INTO cup_transactions (type, quantity, notes, created_at)
+           VALUES ('adjustment', ?, ?, ?)""",
+        (diff, (data.get("notes") or "Cup stock correction").strip(), ts),
+    )
+    db.commit()
+    return jsonify(row_to_cup_inventory(get_cup_inventory(db)))
 
 
 # ── Transactions & Dashboard API ─────────────────────────────────────────────
@@ -963,6 +1249,7 @@ def sales_report():
 
     summary = _sales_summary(db, date_from, date_to)
     daily = _daily_sales_breakdown(db, date_from, date_to)
+    payments = _payment_breakdown(db, date_from, date_to)
 
     return jsonify({
         "from": date_from,
@@ -970,6 +1257,7 @@ def sales_report():
         "preset": preset or "custom",
         "summary": summary,
         "daily_breakdown": daily,
+        "payment_breakdown": payments,
         "sales": [row_to_transaction(r) for r in sales_rows],
     })
 
@@ -978,13 +1266,32 @@ def sales_report():
 @login_required
 def dashboard_stats():
     db = get_db()
+    category_cup_map = get_category_cup_map(db)
+    cup_inventory = get_cup_inventory(db)
 
     products = db.execute("SELECT * FROM products").fetchall()
     total_products = len(products)
-    total_stock = sum(p["quantity"] for p in products)
-    inventory_value = sum(p["price"] * p["quantity"] for p in products)
-    low_stock = [row_to_product(p) for p in products if p["quantity"] <= p["reorder_level"]]
-    out_of_stock = sum(1 for p in products if p["quantity"] <= 0)
+    total_stock = sum(
+        p["quantity"] for p in products if not category_cup_map.get(p["category"], False)
+    )
+    total_stock += cup_inventory["quantity"]
+    inventory_value = sum(
+        p["price"] * p["quantity"]
+        for p in products
+        if not category_cup_map.get(p["category"], False)
+    )
+
+    enriched = [
+        row_to_product(p, category_cup_map, cup_inventory) for p in products
+    ]
+    low_stock = [
+        p for p in enriched
+        if not p["uses_cup_stock"] and p["stock_status"] in ("low", "out")
+    ]
+    out_of_stock = sum(
+        1 for p in enriched if not p["uses_cup_stock"] and p["stock_status"] == "out"
+    )
+    cup_stock = row_to_cup_inventory(cup_inventory)
 
     today = today_kigali()
     week_from, week_to = week_range_kigali()
@@ -1024,11 +1331,13 @@ def dashboard_stats():
     ).fetchone()
 
     category_stats = db.execute(
-        """SELECT category,
+        """SELECT p.category,
                   COUNT(*) AS product_count,
-                  SUM(quantity) AS total_qty,
-                  SUM(price * quantity) AS value
-           FROM products GROUP BY category ORDER BY value DESC"""
+                  SUM(CASE WHEN c.uses_cup_stock = 1 THEN 0 ELSE p.quantity END) AS total_qty,
+                  SUM(CASE WHEN c.uses_cup_stock = 1 THEN 0 ELSE p.price * p.quantity END) AS value
+           FROM products p
+           LEFT JOIN categories c ON c.name = p.category
+           GROUP BY p.category ORDER BY value DESC"""
     ).fetchall()
 
     top_products = db.execute(
@@ -1053,9 +1362,10 @@ def dashboard_stats():
         "total_products": total_products,
         "total_stock_units": total_stock,
         "inventory_value": round(inventory_value, 2),
-        "low_stock_count": len(low_stock),
-        "out_of_stock_count": out_of_stock,
+        "low_stock_count": len(low_stock) + (1 if cup_stock["stock_status"] in ("low", "out") else 0),
+        "out_of_stock_count": out_of_stock + (1 if cup_stock["stock_status"] == "out" else 0),
         "low_stock_items": low_stock[:8],
+        "cup_inventory": cup_stock,
         "revenue_today": round(sales_today["revenue"], 2),
         "units_sold_today": sales_today["units"],
         "revenue_week": round(sales_week["revenue"], 2),
@@ -1093,7 +1403,7 @@ def dashboard_stats():
 @login_required
 def list_categories():
     rows = get_db().execute(
-        """SELECT c.id, c.name, c.sort_order, c.created_at,
+        """SELECT c.id, c.name, c.sort_order, c.created_at, c.uses_cup_stock,
                   COUNT(p.id) AS product_count
            FROM categories c
            LEFT JOIN products p ON p.category = c.name
@@ -1121,14 +1431,15 @@ def admin_create_category():
         return jsonify({"error": "Category already exists"}), 409
 
     max_order = db.execute("SELECT COALESCE(MAX(sort_order), -1) AS n FROM categories").fetchone()["n"]
+    uses_cup_stock = 1 if data.get("uses_cup_stock") else 0
     ts = now_iso()
     cur = db.execute(
-        "INSERT INTO categories (name, sort_order, created_at) VALUES (?, ?, ?)",
-        (name, max_order + 1, ts),
+        "INSERT INTO categories (name, sort_order, uses_cup_stock, created_at) VALUES (?, ?, ?, ?)",
+        (name, max_order + 1, uses_cup_stock, ts),
     )
     db.commit()
     row = db.execute(
-        """SELECT c.id, c.name, c.sort_order, c.created_at, 0 AS product_count
+        """SELECT c.id, c.name, c.sort_order, c.created_at, c.uses_cup_stock, 0 AS product_count
            FROM categories c WHERE c.id = ?""",
         (cur.lastrowid,),
     ).fetchone()
@@ -1158,13 +1469,27 @@ def admin_update_category(category_id):
         return jsonify({"error": "Category already exists"}), 409
 
     old_name = row["name"]
+    uses_cup_stock = (
+        1 if data.get("uses_cup_stock", row["uses_cup_stock"]) else 0
+    )
+    if is_default_category(old_name):
+        default = next(c for c in DEFAULT_CATEGORIES if c["name"].casefold() == old_name.casefold())
+        uses_cup_stock = default["uses_cup_stock"]
     if name != old_name:
         db.execute("UPDATE products SET category = ? WHERE category = ?", (name, old_name))
-    db.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
+    db.execute(
+        "UPDATE categories SET name = ?, uses_cup_stock = ? WHERE id = ?",
+        (name, uses_cup_stock, category_id),
+    )
+    if uses_cup_stock:
+        db.execute(
+            "UPDATE products SET quantity = 0 WHERE category = ?",
+            (name,),
+        )
     db.commit()
 
     updated = db.execute(
-        """SELECT c.id, c.name, c.sort_order, c.created_at,
+        """SELECT c.id, c.name, c.sort_order, c.created_at, c.uses_cup_stock,
                   COUNT(p.id) AS product_count
            FROM categories c
            LEFT JOIN products p ON p.category = c.name
@@ -1183,6 +1508,9 @@ def admin_delete_category(category_id):
     if not row:
         return jsonify({"error": "Category not found"}), 404
 
+    if is_default_category(row["name"]):
+        return jsonify({"error": "Default categories cannot be deleted"}), 400
+
     product_count = db.execute(
         "SELECT COUNT(*) AS n FROM products WHERE category = ?", (row["name"],)
     ).fetchone()["n"]
@@ -1190,9 +1518,6 @@ def admin_delete_category(category_id):
         return jsonify({
             "error": f"Cannot delete — {product_count} product(s) use this category"
         }), 400
-
-    if row["name"].lower() == "other":
-        return jsonify({"error": "The Other category cannot be deleted"}), 400
 
     db.execute("DELETE FROM categories WHERE id = ?", (category_id,))
     db.commit()

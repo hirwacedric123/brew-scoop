@@ -5,7 +5,9 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   border: 1px solid var(--border-subtle);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .table-premium .data-table th {

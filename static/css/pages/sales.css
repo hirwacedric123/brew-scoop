@@ -20,6 +20,69 @@
   margin-bottom: 1.25rem;
 }
 
+.payment-breakdown {
+  margin-bottom: 1.35rem;
+}
+
+.payment-breakdown-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.payment-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.payment-breakdown-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: white;
+}
+
+.payment-breakdown-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.payment-breakdown-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--espresso);
+}
+
+.payment-breakdown-sub {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.payment-breakdown-card.payment-momo {
+  border-color: rgba(255, 152, 0, 0.25);
+  background: linear-gradient(135deg, rgba(255, 243, 224, 0.6), white);
+}
+
+.payment-breakdown-card.payment-cash {
+  border-color: rgba(76, 175, 80, 0.25);
+  background: linear-gradient(135deg, rgba(232, 245, 233, 0.6), white);
+}
+
+.payment-breakdown-card.payment-visa {
+  border-color: rgba(21, 101, 192, 0.25);
+  background: linear-gradient(135deg, rgba(227, 242, 253, 0.6), white);
+}
+
 .period-btn {
   padding: 0.52rem 1.1rem;
   border: 1px solid var(--border-subtle);

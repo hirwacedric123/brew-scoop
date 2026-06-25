@@ -5,6 +5,7 @@
 const state = {
   products: [],
   categories: [],
+  cupInventory: null,
   dashboard: null,
   selectedProductId: null,
   deleteProductId: null,
@@ -14,6 +15,7 @@ const state = {
   salesReport: null,
   selectedSalesDate: null,
   cart: [],
+  paymentMethod: null,
   posMode: false,
   users: [],
   deleteUserId: null,
@@ -33,6 +35,39 @@ const VIEW_TITLES = {
 
 const fmt = new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 });
 const fmtNum = new Intl.NumberFormat("en-RW");
+
+const PAYMENT_LABELS = { momo: "MoMo", cash: "Cash", visa: "Visa" };
+
+const DEFAULT_CATEGORY_NAMES = ["Shared Cups", "Individuals"];
+
+function isDefaultCategory(name) {
+  return DEFAULT_CATEGORY_NAMES.some((n) => n.toLowerCase() === (name || "").toLowerCase());
+}
+
+function categoryStockTypeLabel(usesCupStock) {
+  return usesCupStock
+    ? '<span class="badge badge-category">Shared cups</span>'
+    : '<span class="badge badge-stock ok">Individual</span>';
+}
+
+function paymentMethodLabel(method) {
+  return PAYMENT_LABELS[method] || method || "—";
+}
+
+function clearPaymentMethod() {
+  state.paymentMethod = null;
+  document.querySelectorAll(".payment-chip").forEach((chip) => chip.classList.remove("active"));
+}
+
+function initPaymentMethods() {
+  document.querySelectorAll(".payment-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      document.querySelectorAll(".payment-chip").forEach((c) => c.classList.remove("active"));
+      chip.classList.add("active");
+      state.paymentMethod = chip.dataset.method;
+    });
+  });
+}
 
 const UI_ICONS = {
   revenue: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>`,
@@ -247,7 +282,8 @@ async function loadCategories() {
 }
 
 function populateCategorySelects() {
-  const names = state.categories.map((c) => c.name);
+  const categories = state.categories;
+  const names = categories.map((c) => c.name);
 
   const filter = document.getElementById("product-category-filter");
   if (filter) {
@@ -258,13 +294,39 @@ function populateCategorySelects() {
     if (names.includes(current)) filter.value = current;
   }
 
-  const productCat = document.getElementById("product-category");
-  if (productCat) {
-    const current = productCat.value;
-    productCat.innerHTML = names.map((n) => `<option value="${escAttr(n)}">${esc(n)}</option>`).join("");
-    if (names.includes(current)) productCat.value = current;
-    else if (names.includes("Other")) productCat.value = "Other";
+  const productCategory = document.getElementById("product-category");
+  if (productCategory) {
+    const current = productCategory.value;
+    productCategory.innerHTML =
+      '<option value="">Choose a category...</option>' +
+      names.map((n) => `<option value="${escAttr(n)}">${esc(n)}</option>`).join("");
+    if (names.includes(current)) productCategory.value = current;
   }
+
+  const datalist = document.getElementById("product-name-suggestions");
+  if (datalist) {
+    const productNames = [...new Set(state.products.map((p) => p.name))];
+    datalist.innerHTML = productNames
+      .map((n) => `<option value="${escAttr(n)}"></option>`)
+      .join("");
+  }
+
+  const productName = document.getElementById("product-name");
+  if (productName) {
+    productName.disabled = categories.length === 0;
+    productName.placeholder = categories.length
+      ? "Type a name or pick a suggestion"
+      : "Add a category in Admin first";
+  }
+}
+
+function syncCategoryFromProductName() {
+  const name = document.getElementById("product-name")?.value.trim();
+  const productCategory = document.getElementById("product-category");
+  if (!name || !productCategory) return;
+
+  const match = state.categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+  if (match) productCategory.value = match.name;
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -299,10 +361,24 @@ function renderDashboard(d) {
   }
 
   const lowList = document.getElementById("low-stock-list");
-  if (!d.low_stock_items.length) {
+  const lowItems = [...d.low_stock_items];
+  if (d.cup_inventory && ["low", "out"].includes(d.cup_inventory.stock_status)) {
+    lowItems.unshift({
+      id: "cups",
+      name: "Serving Cups",
+      category: "Shared inventory",
+      quantity: d.cup_inventory.quantity,
+      reorder_level: d.cup_inventory.reorder_level,
+      stock_status: d.cup_inventory.stock_status,
+      uses_cup_stock: true,
+      is_cup_pool: true,
+    });
+  }
+
+  if (!lowItems.length) {
     lowList.innerHTML = emptyState(UI_ICONS.check, "All stocked up", "Every product is above reorder level.", true);
   } else {
-    lowList.innerHTML = d.low_stock_items
+    lowList.innerHTML = lowItems
       .map(
         (p) => `
       <div class="alert-row">
@@ -310,10 +386,10 @@ function renderDashboard(d) {
           <div class="product-avatar product-avatar-sm">${esc(productInitials(p.name))}</div>
           <div>
             <strong>${esc(p.name)}</strong>
-            <span>${esc(p.category)} · reorder at ${p.reorder_level}</span>
+            <span>${esc(p.category)}${p.is_cup_pool ? "" : ` · reorder at ${p.reorder_level}`}</span>
           </div>
         </div>
-        <span class="badge badge-stock ${p.stock_status}">${p.quantity} left</span>
+        <span class="badge badge-stock ${p.stock_status}">${p.is_cup_pool || p.uses_cup_stock ? `${p.quantity} cups` : `${p.quantity} left`}</span>
       </div>`
       )
       .join("");
@@ -420,11 +496,11 @@ function renderProductsTable(products) {
       (p) => `
     <tr>
       <td>
-        ${productCell(p.name, p.sku ? esc(p.sku) : "No SKU")}
+        ${productCell(p.name, p.uses_cup_stock ? "Uses cup stock" : esc(p.category))}
       </td>
       <td><span class="badge badge-category">${esc(p.category)}</span></td>
       <td>${fmt.format(p.price)}</td>
-      <td><strong>${fmtNum.format(p.quantity)}</strong></td>
+      <td><strong>${p.uses_cup_stock ? `${fmtNum.format(p.quantity)} cups` : fmtNum.format(p.quantity)}</strong></td>
       <td><span class="badge badge-stock ${p.stock_status}">${stockLabel(p)}</span></td>
       <td>
         <div class="action-group">
@@ -444,19 +520,57 @@ function renderProductsTable(products) {
     .join("");
 }
 
+function categoryUsesCups(categoryName) {
+  const category = state.categories.find(
+    (c) => c.name.toLowerCase() === (categoryName || "").toLowerCase()
+  );
+  return category?.uses_cup_stock || false;
+}
+
 function stockLabel(p) {
+  if (p.uses_cup_stock) {
+    if (p.stock_status === "out") return "No cups";
+    if (p.stock_status === "low") return "Low cups";
+    return `${fmtNum.format(p.quantity)} cups`;
+  }
   if (p.stock_status === "out") return "Out of stock";
   if (p.stock_status === "low") return "Low stock";
   return "In stock";
 }
 
+function availableStockLabel(p) {
+  return p.uses_cup_stock ? `${p.quantity} cups` : `${p.quantity} left`;
+}
+
+function updateProductStockFields() {
+  const categoryName = document.getElementById("product-category")?.value;
+  const usesCups = categoryUsesCups(categoryName);
+  const stockFields = document.getElementById("product-stock-fields");
+  const cupHint = document.getElementById("product-cup-hint");
+
+  if (stockFields) stockFields.hidden = usesCups;
+  if (cupHint) cupHint.hidden = !usesCups;
+}
+
 function openAddProduct() {
-  document.getElementById("product-modal-title").textContent = "Add Product";
-  document.getElementById("product-form").reset();
-  document.getElementById("product-id").value = "";
-  document.getElementById("product-quantity-label").textContent = "Initial Quantity";
-  document.getElementById("product-reorder").value = "10";
-  showModal("product-modal");
+  loadCategories()
+    .then(() => api("/api/products"))
+    .then((products) => {
+      state.products = products;
+      if (!state.categories.length) {
+        toast("Add a category in Admin before creating products", "error");
+        return;
+      }
+
+      document.getElementById("product-modal-title").textContent = "Add Product";
+      document.getElementById("product-form").reset();
+      document.getElementById("product-id").value = "";
+      document.getElementById("product-quantity-label").textContent = "Initial Quantity";
+      document.getElementById("product-reorder").value = "10";
+      populateCategorySelects();
+      showModal("product-modal");
+    })
+    .catch((e) => toast(e.message, "error"));
 }
 
 async function openEditProduct(id) {
@@ -464,14 +578,15 @@ async function openEditProduct(id) {
     const p = await api(`/api/products/${id}`);
     document.getElementById("product-modal-title").textContent = "Edit Product";
     document.getElementById("product-id").value = p.id;
+    populateCategorySelects();
     document.getElementById("product-name").value = p.name;
     document.getElementById("product-category").value = p.category;
-    document.getElementById("product-sku").value = p.sku;
     document.getElementById("product-price").value = p.price;
     document.getElementById("product-quantity").value = p.quantity;
     document.getElementById("product-quantity-label").textContent = "Stock Quantity";
     document.getElementById("product-reorder").value = p.reorder_level;
     document.getElementById("product-description").value = p.description;
+    updateProductStockFields();
     showModal("product-modal");
   } catch (e) {
     toast(e.message, "error");
@@ -487,10 +602,21 @@ function openDeleteProduct(id, name) {
 async function saveProduct(e) {
   e.preventDefault();
   const id = document.getElementById("product-id").value;
+  const name = document.getElementById("product-name").value.trim();
+  const category = document.getElementById("product-category").value;
+
+  if (!name) {
+    toast("Enter a product name", "error");
+    return;
+  }
+  if (!category) {
+    toast("Choose a category", "error");
+    return;
+  }
+
   const payload = {
-    name: document.getElementById("product-name").value,
-    category: document.getElementById("product-category").value,
-    sku: document.getElementById("product-sku").value,
+    name,
+    category,
     price: parseFloat(document.getElementById("product-price").value),
     reorder_level: parseInt(document.getElementById("product-reorder").value, 10),
     description: document.getElementById("product-description").value,
@@ -527,13 +653,17 @@ async function confirmDelete() {
 
 async function loadSellView() {
   try {
-    state.products = await api("/api/products");
+    const [products, cups] = await Promise.all([
+      api("/api/products"),
+      api("/api/cups"),
+    ]);
+    state.products = products;
+    state.cupInventory = cups;
     populateProductSelects();
     renderQuickPick();
     syncCartWithStock();
     updateSellPreview();
     renderCart();
-    if (state.posMode) focusBarcodeInput();
   } catch (e) {
     toast(e.message, "error");
   }
@@ -551,50 +681,38 @@ function togglePosMode() {
   if (posBar) posBar.hidden = !state.posMode;
   if (subtitle) {
     subtitle.textContent = state.posMode
-      ? "Counter mode — scan SKUs, use shortcuts for fast checkout"
+      ? "Counter mode — larger tiles and keyboard shortcuts"
       : "Add items to the cart, then complete checkout in one step";
   }
-  if (state.posMode) focusBarcodeInput();
 }
 
-function focusBarcodeInput() {
-  const input = document.getElementById("pos-barcode-input");
-  if (input && document.getElementById("view-sell")?.classList.contains("active")) {
-    input.focus();
-    input.select();
-  }
-}
+function populateProductSelects() {
+  const inStock = state.products.filter((p) => p.quantity > 0);
+  const stockProducts = state.products.filter((p) => !p.uses_cup_stock);
 
-function handleBarcodeScan() {
-  const input = document.getElementById("pos-barcode-input");
-  const code = input?.value.trim();
-  if (!code) return;
+  const sellSelect = document.getElementById("sell-product");
+  sellSelect.innerHTML =
+    '<option value="">Choose a product...</option>' +
+    inStock
+      .map((p) => {
+        const stockText = p.uses_cup_stock ? `${p.quantity} cups` : `${p.quantity} in stock`;
+        return `<option value="${p.id}">${esc(p.name)} — ${stockText}</option>`;
+      })
+      .join("");
 
-  const product = state.products.find(
-    (p) => p.sku && p.sku.toLowerCase() === code.toLowerCase()
-  );
-
-  if (!product) {
-    toast(`No product found for SKU: ${code}`, "error");
-    input.select();
-    return;
-  }
-
-  addToCart(product.id, 1);
-  input.value = "";
-  input.focus();
+  ["restock-product", "adjust-product"].forEach((id) => {
+    const sel = document.getElementById(id);
+    sel.innerHTML =
+      '<option value="">Choose a product...</option>' +
+      stockProducts
+        .map((p) => `<option value="${p.id}">${esc(p.name)} (${p.quantity} units)</option>`)
+        .join("");
+  });
 }
 
 function initPosShortcuts() {
   document.addEventListener("keydown", (e) => {
     if (!document.getElementById("view-sell")?.classList.contains("active")) return;
-
-    if (e.key === "F2") {
-      e.preventDefault();
-      if (!state.posMode) togglePosMode();
-      else focusBarcodeInput();
-      return;
-    }
 
     if (e.key === "Escape" && state.cart.length) {
       e.preventDefault();
@@ -608,41 +726,38 @@ function initPosShortcuts() {
       if (state.cart.length) completeCheckout();
     }
   });
-
-  document.getElementById("pos-barcode-input")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleBarcodeScan();
-    }
-  });
 }
 
-function populateProductSelects() {
-  const inStock = state.products.filter((p) => p.quantity > 0);
-  const all = state.products;
+function getCartCupDemand(excludeProductId = null) {
+  return state.cart.reduce((total, item) => {
+    if (excludeProductId && item.product_id === excludeProductId) return total;
+    const product = state.products.find((p) => p.id === item.product_id);
+    return total + (product?.uses_cup_stock ? item.quantity : 0);
+  }, 0);
+}
 
-  const sellSelect = document.getElementById("sell-product");
-  sellSelect.innerHTML =
-    '<option value="">Choose a product...</option>' +
-    inStock.map((p) => `<option value="${p.id}">${esc(p.name)} — ${p.quantity} in stock</option>`).join("");
-
-  ["restock-product", "adjust-product"].forEach((id) => {
-    const sel = document.getElementById(id);
-    sel.innerHTML =
-      '<option value="">Choose a product...</option>' +
-      all.map((p) => `<option value="${p.id}">${esc(p.name)} (${p.quantity} units)</option>`).join("");
-  });
+function getAvailableUnits(product, excludeProductId = null) {
+  if (!product) return 0;
+  if (product.uses_cup_stock) {
+    const cupsInCart = getCartCupDemand(excludeProductId);
+    return Math.max(product.quantity - cupsInCart, 0);
+  }
+  const inCart = state.cart.find((c) => c.product_id === product.id);
+  return Math.max(product.quantity - (inCart?.quantity || 0), 0);
 }
 
 function syncCartWithStock() {
   state.cart = state.cart.filter((item) => {
     const product = state.products.find((p) => p.id === item.product_id);
     if (!product || product.quantity <= 0) return false;
-    if (item.quantity > product.quantity) item.quantity = product.quantity;
-    item.maxStock = product.quantity;
+    const available = getAvailableUnits(product, item.product_id) + item.quantity;
+    if (available <= 0) return false;
+    if (item.quantity > available) item.quantity = available;
+    item.maxStock = available;
     item.price = product.price;
     item.name = product.name;
     item.category = product.category;
+    item.uses_cup_stock = product.uses_cup_stock;
     return true;
   });
 }
@@ -662,7 +777,7 @@ function renderQuickPick() {
   grid.innerHTML = state.products
     .map((p) => {
       const inCart = cartQtyInCart(p.id);
-      const available = p.quantity - inCart;
+      const available = getAvailableUnits(p);
       const disabled = p.quantity <= 0 || available <= 0;
       const accent = categoryAccent(p.category);
       return `
@@ -670,7 +785,7 @@ function renderQuickPick() {
       style="--qp-accent: ${accent}"
       ${disabled ? "disabled" : `onclick="addToCart(${p.id}, 1)"`}>
       <strong>${esc(p.name)}</strong>
-      <span>${esc(p.category)} · ${p.quantity} left</span>
+      <span>${esc(p.category)} · ${availableStockLabel({ ...p, quantity: available })}</span>
       <div class="qp-price">${fmt.format(p.price)}</div>
       ${inCart ? `<div class="qp-cart-badge">${inCart} in cart</div>` : ""}
     </button>`;
@@ -690,9 +805,11 @@ function updateSellPreview() {
 
   preview.hidden = false;
   document.getElementById("preview-price").textContent = fmt.format(product.price);
-  const available = product.quantity - cartQtyInCart(product.id);
+  const available = getAvailableUnits(product);
   document.getElementById("preview-stock").textContent =
-    available > 0 ? `${available} available` : "All in cart";
+    available > 0
+      ? `${available} ${product.uses_cup_stock ? "cups" : "units"} available`
+      : "All in cart";
   document.getElementById("preview-category").textContent = product.category;
 
   const qtyInput = document.getElementById("sell-quantity");
@@ -713,20 +830,22 @@ function adjustQty(delta) {
 function addToCart(productId, qty = null) {
   const product = state.products.find((p) => p.id === productId);
   if (!product || product.quantity <= 0) {
-    toast("Product out of stock", "error");
+    toast(product?.uses_cup_stock ? "No cups left in stock" : "Product out of stock", "error");
     return;
   }
 
   const addQty = qty ?? (parseInt(document.getElementById("sell-quantity").value, 10) || 1);
   const existing = state.cart.find((c) => c.product_id === productId);
   const currentInCart = existing ? existing.quantity : 0;
+  const available = getAvailableUnits(product);
 
-  if (currentInCart + addQty > product.quantity) {
-    const remaining = product.quantity - currentInCart;
+  if (addQty > available) {
     toast(
-      remaining > 0
-        ? `Only ${remaining} more available for ${product.name}`
-        : `${product.name} is fully in the cart`,
+      available > 0
+        ? `Only ${available} more ${product.uses_cup_stock ? "cup(s)" : "unit(s)"} available for ${product.name}`
+        : product.uses_cup_stock
+          ? "No cups left for this sale"
+          : `${product.name} is fully in the cart`,
       "error"
     );
     return;
@@ -734,6 +853,7 @@ function addToCart(productId, qty = null) {
 
   if (existing) {
     existing.quantity += addQty;
+    existing.uses_cup_stock = product.uses_cup_stock;
   } else {
     state.cart.push({
       product_id: productId,
@@ -741,7 +861,8 @@ function addToCart(productId, qty = null) {
       category: product.category,
       price: product.price,
       quantity: addQty,
-      maxStock: product.quantity,
+      maxStock: available + addQty,
+      uses_cup_stock: product.uses_cup_stock,
     });
   }
 
@@ -777,6 +898,7 @@ function removeFromCart(productId) {
 
 function clearCart() {
   state.cart = [];
+  clearPaymentMethod();
   document.getElementById("sell-notes").value = "";
   document.getElementById("add-to-cart-form").reset();
   document.getElementById("sell-quantity").value = "1";
@@ -854,6 +976,11 @@ async function completeCheckout() {
     return;
   }
 
+  if (!state.paymentMethod) {
+    toast("Select a payment method: MoMo, Cash, or Visa", "error");
+    return;
+  }
+
   const btn = document.getElementById("btn-complete-sale");
   btn.disabled = true;
 
@@ -866,6 +993,7 @@ async function completeCheckout() {
           quantity: c.quantity,
         })),
         notes: document.getElementById("sell-notes").value,
+        payment_method: state.paymentMethod,
       }),
     });
 
@@ -881,6 +1009,7 @@ async function completeCheckout() {
 
     document.getElementById("sale-success-details").innerHTML = `
       <p class="checkout-ref"><span>Reference</span><strong>${esc(result.checkout_ref)}</strong></p>
+      <p class="checkout-payment"><span>Payment</span><strong>${esc(result.payment_label || paymentMethodLabel(result.payment_method))}</strong></p>
       <div class="checkout-lines">${itemsHtml}</div>
       <p class="checkout-grand-total"><span>Total</span><strong>${fmt.format(result.total_amount)}</strong></p>
       <p><span>Items</span><strong>${result.total_units} units · ${result.line_count} products</strong></p>
@@ -907,8 +1036,14 @@ function quickSell(id) {
 
 async function loadRestockView() {
   try {
-    state.products = await api("/api/products");
+    const [products, cups] = await Promise.all([
+      api("/api/products"),
+      api("/api/cups"),
+    ]);
+    state.products = products;
+    state.cupInventory = cups;
     populateProductSelects();
+    renderCupRestock();
     renderRestockLowStock();
     updateRestockPreview();
     updateAdjustPreview();
@@ -917,31 +1052,87 @@ async function loadRestockView() {
   }
 }
 
+function renderCupRestock() {
+  const cups = state.cupInventory;
+  if (!cups) return;
+
+  const badge = document.getElementById("cup-stock-badge");
+  if (badge) {
+    badge.textContent = stockLabel({ ...cups, uses_cup_stock: true });
+    badge.className = `badge badge-stock ${cups.stock_status}`;
+  }
+
+  document.getElementById("cup-preview-current").textContent = fmtNum.format(cups.quantity);
+  updateCupRestockPreview();
+}
+
+function updateCupRestockPreview() {
+  const cups = state.cupInventory;
+  if (!cups) return;
+  const qty = parseInt(document.getElementById("cup-restock-quantity")?.value, 10) || 0;
+  document.getElementById("cup-preview-after").textContent = fmtNum.format(cups.quantity + qty);
+}
+
+async function submitCupRestock(e) {
+  e.preventDefault();
+  const quantity = parseInt(document.getElementById("cup-restock-quantity").value, 10);
+  const notes = document.getElementById("cup-restock-notes").value;
+
+  try {
+    state.cupInventory = await api("/api/cups/restock", {
+      method: "POST",
+      body: JSON.stringify({ quantity, notes }),
+    });
+    toast(`Added ${quantity} cups`);
+    document.getElementById("cup-restock-notes").value = "";
+    renderCupRestock();
+    renderRestockLowStock();
+    await loadProducts();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
 function renderRestockLowStock() {
   const el = document.getElementById("restock-low-stock");
   if (!el) return;
 
   const low = state.products
-    .filter((p) => p.stock_status === "low" || p.stock_status === "out")
+    .filter((p) => !p.uses_cup_stock && (p.stock_status === "low" || p.stock_status === "out"))
     .sort((a, b) => a.quantity - b.quantity);
 
-  if (!low.length) {
+  const cupItems = [];
+  if (state.cupInventory && ["low", "out"].includes(state.cupInventory.stock_status)) {
+    cupItems.push({
+      id: "cups",
+      name: "Serving Cups",
+      category: "Shared inventory",
+      quantity: state.cupInventory.quantity,
+      reorder_level: state.cupInventory.reorder_level,
+      stock_status: state.cupInventory.stock_status,
+      is_cup_pool: true,
+    });
+  }
+
+  const allLow = [...cupItems, ...low];
+
+  if (!allLow.length) {
     el.innerHTML = emptyState(UI_ICONS.check, "All stocked up", "No products need restocking right now.", true);
     return;
   }
 
-  el.innerHTML = low
+  el.innerHTML = allLow
     .map(
       (p) => `
-    <button type="button" class="restock-pick-item" onclick="selectRestockProduct(${p.id})">
+    <button type="button" class="restock-pick-item" onclick="${p.is_cup_pool ? "document.getElementById('cup-restock-quantity')?.focus()" : `selectRestockProduct(${p.id})`}">
       <div class="restock-pick-info">
         <div class="product-avatar product-avatar-sm">${esc(productInitials(p.name))}</div>
         <div>
           <strong>${esc(p.name)}</strong>
-          <span>${esc(p.category)} · reorder ${p.reorder_level}</span>
+          <span>${esc(p.category)}${p.is_cup_pool ? "" : ` · reorder ${p.reorder_level}`}</span>
         </div>
       </div>
-      <span class="badge badge-stock ${p.stock_status}">${p.quantity} left</span>
+      <span class="badge badge-stock ${p.stock_status}">${p.is_cup_pool ? `${p.quantity} cups` : `${p.quantity} left`}</span>
     </button>`
     )
     .join("");
@@ -987,7 +1178,7 @@ function updateAdjustPreview() {
   preview.hidden = false;
   document.getElementById("adjust-preview-avatar").textContent = productInitials(product.name);
   document.getElementById("adjust-preview-name").textContent = product.name;
-  document.getElementById("adjust-preview-meta").textContent = `${product.category} · SKU ${product.sku || "—"}`;
+  document.getElementById("adjust-preview-meta").textContent = `${product.category} · ${fmt.format(product.price)} each`;
   document.getElementById("adjust-preview-current").textContent = fmtNum.format(product.quantity);
   document.getElementById("adjust-preview-new").textContent = hasNewQty ? fmtNum.format(newQty) : "—";
 
@@ -1101,7 +1292,7 @@ async function loadHistory() {
 function renderHistory(transactions) {
   const tbody = document.getElementById("history-table-body");
   if (!transactions.length) {
-    tbody.innerHTML = `<tr><td colspan="6">${emptyState(UI_ICONS.clock, "No transactions", "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7">${emptyState(UI_ICONS.clock, "No transactions", "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
     return;
   }
 
@@ -1116,6 +1307,7 @@ function renderHistory(transactions) {
       <td>${typeBadge(t.type)}</td>
       <td>${formatTransactionQty(t)}</td>
       <td>${t.type === "sale" ? fmt.format(t.total_amount) : "—"}</td>
+      <td>${t.type === "sale" ? paymentMethodLabel(t.payment_method) : "—"}</td>
       <td style="color:var(--text-muted);font-size:0.82rem">${esc(t.notes || "—")}</td>
     </tr>`
     )
@@ -1175,7 +1367,7 @@ async function loadSalesReports(from, to) {
 }
 
 function renderSalesReport(report) {
-  const { summary, daily_breakdown, sales, from, to } = report;
+  const { summary, daily_breakdown, payment_breakdown, sales, from, to } = report;
 
   document.getElementById("sales-summary-stats").innerHTML = `
     ${statCard("revenue", UI_ICONS.revenue, "Total Revenue", fmt.format(summary.revenue), formatRangeLabel(from, to))}
@@ -1183,6 +1375,26 @@ function renderSalesReport(report) {
     ${statCard("stock", UI_ICONS.chart, "Transactions", fmtNum.format(summary.transactions), "sales recorded")}
     ${statCard("alert", UI_ICONS.calendar, "Active Days", daily_breakdown.length, "days with sales")}
   `;
+
+  const payments = payment_breakdown || [];
+  const breakdownEl = document.getElementById("sales-payment-breakdown");
+  if (breakdownEl) {
+    breakdownEl.innerHTML = `
+      <h3 class="payment-breakdown-title">Revenue by Payment</h3>
+      <div class="payment-breakdown-grid">
+        ${payments
+          .map(
+            (p) => `
+          <div class="payment-breakdown-card payment-${p.method}">
+            <span class="payment-breakdown-label">${esc(p.label)}</span>
+            <strong class="payment-breakdown-value">${fmt.format(p.revenue)}</strong>
+            <span class="payment-breakdown-sub">${fmtNum.format(p.checkouts)} checkout${p.checkouts !== 1 ? "s" : ""}</span>
+          </div>`
+          )
+          .join("")}
+      </div>
+    `;
+  }
 
   document.getElementById("sales-range-label").textContent = formatRangeLabel(from, to);
 
@@ -1233,7 +1445,7 @@ function renderSalesDetail(sales, date, from, to) {
   }
 
   if (!sales.length) {
-    tbody.innerHTML = `<tr><td colspan="4">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
     return;
   }
 
@@ -1247,6 +1459,7 @@ function renderSalesDetail(sales, date, from, to) {
       </td>
       <td>${s.quantity}</td>
       <td><strong>${fmt.format(s.total_amount)}</strong></td>
+      <td>${paymentMethodLabel(s.payment_method)}</td>
     </tr>`
     )
     .join("");
@@ -1399,7 +1612,7 @@ async function confirmDeleteUser() {
 async function loadCategoriesAdmin() {
   if (!state.currentUser || state.currentUser.role !== "admin") return;
 
-  showTableSkeleton("categories-table-body", 3, 4);
+  showTableSkeleton("categories-table-body", 3, 5);
 
   try {
     state.categories = await api("/api/categories");
@@ -1415,24 +1628,27 @@ function renderCategoriesTable(categories) {
   if (!tbody) return;
 
   if (!categories.length) {
-    tbody.innerHTML = `<tr><td colspan="3" class="empty-state">No categories yet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state">No categories yet</td></tr>`;
     return;
   }
 
   tbody.innerHTML = categories
-    .map((c) => {
-      const isOther = c.name.toLowerCase() === "other";
-      return `
+    .map(
+      (c) => `
     <tr>
-      <td><strong>${esc(c.name)}</strong></td>
+      <td>
+        <strong>${esc(c.name)}</strong>
+        ${c.is_default ? '<span class="text-muted" style="font-size:0.75rem;margin-left:0.35rem">Default</span>' : ""}
+      </td>
       <td>${fmtNum.format(c.product_count)}</td>
+      <td>${categoryStockTypeLabel(c.uses_cup_stock)}</td>
       <td>
         <div class="action-group">
           <button class="btn-icon" title="Edit" onclick="openEditCategory(${c.id})">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           </button>
           ${
-            isOther
+            c.is_default
               ? ""
               : `<button class="btn-icon danger" title="Delete" onclick="openDeleteCategory(${c.id}, '${escAttr(c.name)}')">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
@@ -1440,8 +1656,8 @@ function renderCategoriesTable(categories) {
           }
         </div>
       </td>
-    </tr>`;
-    })
+    </tr>`
+    )
     .join("");
 }
 
@@ -1449,6 +1665,10 @@ function openAddCategory() {
   document.getElementById("category-modal-title").textContent = "Add Category";
   document.getElementById("category-form").reset();
   document.getElementById("category-id").value = "";
+  document.getElementById("category-uses-cups").checked = false;
+  document.getElementById("category-uses-cups").disabled = false;
+  document.getElementById("category-stock-hint").textContent =
+    "Leave unchecked for individual per-product stock.";
   showModal("category-modal");
 }
 
@@ -1456,9 +1676,15 @@ function openEditCategory(id) {
   const category = state.categories.find((c) => c.id === id);
   if (!category) return;
 
+  const isDefault = category.is_default || isDefaultCategory(category.name);
   document.getElementById("category-modal-title").textContent = "Edit Category";
   document.getElementById("category-id").value = category.id;
   document.getElementById("category-name").value = category.name;
+  document.getElementById("category-uses-cups").checked = !!category.uses_cup_stock;
+  document.getElementById("category-uses-cups").disabled = isDefault;
+  document.getElementById("category-stock-hint").textContent = isDefault
+    ? "Stock type is fixed for default categories."
+    : "Leave unchecked for individual per-product stock.";
   showModal("category-modal");
 }
 
@@ -1471,7 +1697,10 @@ function openDeleteCategory(id, name) {
 async function saveCategory(e) {
   e.preventDefault();
   const id = document.getElementById("category-id").value;
-  const payload = { name: document.getElementById("category-name").value.trim() };
+  const payload = {
+    name: document.getElementById("category-name").value.trim(),
+    uses_cup_stock: document.getElementById("category-uses-cups").checked,
+  };
 
   try {
     if (id) {
@@ -1608,6 +1837,34 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("product-category-filter").addEventListener("change", loadProducts);
   document.getElementById("low-stock-filter").addEventListener("change", loadProducts);
+  document.getElementById("product-name")?.addEventListener("input", () => {
+    syncCategoryFromProductName();
+    updateProductStockFields();
+  });
+  document.getElementById("product-name")?.addEventListener("change", () => {
+    syncCategoryFromProductName();
+    updateProductStockFields();
+  });
+  document.getElementById("product-category")?.addEventListener("change", updateProductStockFields);
+
+  document.getElementById("cup-restock-form")?.addEventListener("submit", submitCupRestock);
+  document.getElementById("cup-restock-quantity")?.addEventListener("input", updateCupRestockPreview);
+  document.getElementById("cup-qty-minus")?.addEventListener("click", () => {
+    const input = document.getElementById("cup-restock-quantity");
+    input.value = Math.max(1, (parseInt(input.value, 10) || 1) - 1);
+    updateCupRestockPreview();
+  });
+  document.getElementById("cup-qty-plus")?.addEventListener("click", () => {
+    const input = document.getElementById("cup-restock-quantity");
+    input.value = (parseInt(input.value, 10) || 1) + 1;
+    updateCupRestockPreview();
+  });
+  document.querySelectorAll(".cup-qty-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.getElementById("cup-restock-quantity").value = btn.dataset.qty;
+      updateCupRestockPreview();
+    });
+  });
 
   document.getElementById("btn-pos-mode")?.addEventListener("click", togglePosMode);
 
@@ -1615,6 +1872,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("qty-minus").addEventListener("click", () => adjustQty(-1));
   document.getElementById("qty-plus").addEventListener("click", () => adjustQty(1));
   document.getElementById("add-to-cart-form").addEventListener("submit", submitAddToCart);
+  initPaymentMethods();
   document.getElementById("btn-complete-sale").addEventListener("click", completeCheckout);
   document.getElementById("btn-clear-cart").addEventListener("click", clearCart);
 

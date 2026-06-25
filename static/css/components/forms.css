@@ -188,3 +188,14 @@ select:hover {
 .login-form .form-group {
   margin-bottom: 1.15rem;
 }
+
+.form-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--foam);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 0.9rem;
+  margin-bottom: 1rem;
+  line-height: 1.45;
+}

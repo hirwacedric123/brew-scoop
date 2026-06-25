@@ -56,6 +56,45 @@
   background: linear-gradient(to top, rgba(250, 246, 241, 0.5), transparent);
 }
 
+.payment-methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.payment-chip {
+  flex: 1;
+  min-width: 4.5rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: white;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), color var(--transition), box-shadow var(--transition);
+}
+
+.payment-chip:hover:not(.active) {
+  border-color: var(--caramel);
+  color: var(--coffee);
+  background: var(--foam);
+}
+
+.payment-chip.active {
+  background: linear-gradient(135deg, var(--espresso) 0%, var(--coffee) 100%);
+  border-color: transparent;
+  color: var(--cream);
+  box-shadow: 0 2px 8px rgba(44, 24, 16, 0.2);
+}
+
+.payment-chip:focus-visible {
+  outline: 2px solid var(--caramel);
+  outline-offset: 2px;
+}
+
 .cart-items {
   display: flex;
   flex-direction: column;
@@ -157,6 +196,7 @@
 }
 
 .checkout-ref,
+.checkout-payment,
 .checkout-grand-total {
   font-weight: 600;
 }
