@@ -19,15 +19,22 @@ from auth import (
     login_required,
     login_user,
     logout_user,
+    normalize_email,
     public_user,
     role_required,
     row_to_user,
+    validate_email,
     validate_user_payload,
     verify_password,
 )
+from reporting import (
+    get_database_path,
+    payment_breakdown as _payment_breakdown,
+    sales_summary as _sales_summary,
+)
 
 app = Flask(__name__)
-app.config["DATABASE"] = os.path.join(os.path.dirname(__file__), "brew_scoop.db")
+app.config["DATABASE"] = get_database_path()
 app.config["SECRET_KEY"] = os.environ.get(
     "BREW_SCOOP_SECRET_KEY", "dev-change-me-in-production"
 )
@@ -227,6 +234,10 @@ def _migrate_db(db):
     )
 
     _migrate_users_role_check(db)
+
+    user_cols = {row[1] for row in db.execute("PRAGMA table_info(users)").fetchall()}
+    if "email" not in user_cols:
+        db.execute("ALTER TABLE users ADD COLUMN email TEXT")
 
 
 def _migrate_users_role_check(db):
@@ -478,25 +489,6 @@ def _sale_user_clause(user_id, alias=""):
     return f" AND {prefix}user_id = ?", [uid]
 
 
-def _sales_summary(db, date_from, date_to, user_id=None):
-    user_clause, user_params = _sale_user_clause(user_id)
-    row = db.execute(
-        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
-                  COALESCE(SUM(quantity), 0) AS units,
-                  COUNT(*) AS transactions
-           FROM transactions
-           WHERE type = 'sale'
-             AND substr(created_at, 1, 10) >= ?
-             AND substr(created_at, 1, 10) <= ?{user_clause}""",
-        (date_from, date_to, *user_params),
-    ).fetchone()
-    return {
-        "revenue": round(row["revenue"], 2),
-        "units": row["units"],
-        "transactions": row["transactions"],
-    }
-
-
 def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
     user_clause, user_params = _sale_user_clause(user_id)
     rows = db.execute(
@@ -520,32 +512,6 @@ def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
             "transactions": r["transactions"],
         }
         for r in rows
-    ]
-
-
-def _payment_breakdown(db, date_from, date_to, user_id=None):
-    user_clause, user_params = _sale_user_clause(user_id)
-    rows = db.execute(
-        f"""SELECT payment_method,
-                  COALESCE(SUM(total_amount), 0) AS revenue,
-                  COUNT(DISTINCT checkout_ref) AS checkouts
-           FROM transactions
-           WHERE type = 'sale'
-             AND payment_method IS NOT NULL
-             AND substr(created_at, 1, 10) >= ?
-             AND substr(created_at, 1, 10) <= ?{user_clause}
-           GROUP BY payment_method""",
-        (date_from, date_to, *user_params),
-    ).fetchall()
-    totals = {row["payment_method"]: row for row in rows}
-    return [
-        {
-            "method": method,
-            "label": label,
-            "revenue": round(totals[method]["revenue"], 2) if method in totals else 0,
-            "checkouts": totals[method]["checkouts"] if method in totals else 0,
-        }
-        for method, label in PAYMENT_METHODS.items()
     ]
 
 
@@ -624,15 +590,21 @@ def admin_create_user():
     if get_user_by_username(db, data["username"]):
         return jsonify({"error": "Username already exists"}), 409
 
+    email_error = validate_email(data.get("email"))
+    if email_error:
+        return jsonify({"error": email_error}), 400
+    email = normalize_email(data.get("email"))
+
     ts = now_iso()
     cur = db.execute(
         """INSERT INTO users
-           (username, password_hash, display_name, role, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, 1, ?, ?)""",
+           (username, password_hash, display_name, email, role, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
         (
             data["username"].strip(),
             hash_password(data["password"]),
             (data.get("display_name") or data["username"]).strip(),
+            email,
             data.get("role", "stock_manager"),
             ts,
             ts,
@@ -661,6 +633,14 @@ def admin_update_user(user_id):
     else:
         display_name = row["display_name"]
 
+    if "email" in data:
+        email_error = validate_email(data.get("email"))
+        if email_error:
+            return jsonify({"error": email_error}), 400
+        email = normalize_email(data.get("email"))
+    else:
+        email = normalize_email(row["email"]) if "email" in row.keys() else None
+
     if "role" in data:
         role = data["role"]
         if role not in ROLES:
@@ -686,9 +666,9 @@ def admin_update_user(user_id):
     ts = now_iso()
     db.execute(
         """UPDATE users SET
-           display_name=?, role=?, is_active=?, password_hash=?, updated_at=?
+           display_name=?, email=?, role=?, is_active=?, password_hash=?, updated_at=?
            WHERE id=?""",
-        (display_name, role, is_active, password_hash, ts, user_id),
+        (display_name, email, role, is_active, password_hash, ts, user_id),
     )
     db.commit()
     updated = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()

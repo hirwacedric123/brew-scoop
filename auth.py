@@ -1,9 +1,12 @@
 """Authentication helpers for Brew & Scoop."""
 
+import re
 from functools import wraps
 
 from flask import jsonify, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
+
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 ROLES = ("admin", "stock_manager", "seller")
 
@@ -16,6 +19,7 @@ def init_users_table(db):
             username TEXT NOT NULL UNIQUE COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL,
+            email TEXT,
             role TEXT NOT NULL CHECK(role IN ('admin', 'stock_manager', 'seller')),
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
             created_at TEXT NOT NULL,
@@ -33,6 +37,7 @@ def row_to_user(row):
         "id": row["id"],
         "username": row["username"],
         "display_name": row["display_name"],
+        "email": (row["email"] or "").strip() if "email" in row.keys() else "",
         "role": row["role"],
         "is_active": bool(row["is_active"]),
         "created_at": row["created_at"],
@@ -111,6 +116,20 @@ def validate_user_payload(data, creating=False):
     if role not in ROLES:
         return f"Invalid role. Choose from: {', '.join(ROLES)}"
 
+    return None
+
+
+def normalize_email(value):
+    email = (value or "").strip()
+    return email or None
+
+
+def validate_email(value):
+    email = normalize_email(value)
+    if email is None:
+        return None
+    if not EMAIL_RE.fullmatch(email):
+        return "Enter a valid email address"
     return None
 
 

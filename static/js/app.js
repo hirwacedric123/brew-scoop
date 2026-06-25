@@ -1988,7 +1988,7 @@ function selectSalesDate(date) {
 async function loadUsers() {
   if (!state.currentUser || state.currentUser.role !== "admin") return;
 
-  showTableSkeleton("users-table-body", 5, 4);
+  showTableSkeleton("users-table-body", 5, 5);
 
   try {
     state.users = await api("/api/admin/users");
@@ -2003,7 +2003,7 @@ function renderUsersTable(users) {
   if (!tbody) return;
 
   if (!users.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state">No users yet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No users yet</td></tr>`;
     return;
   }
 
@@ -2018,6 +2018,7 @@ function renderUsersTable(users) {
     <tr>
       <td><strong>${esc(u.display_name)}</strong></td>
       <td>${esc(u.username)}</td>
+      <td>${u.email ? esc(u.email) : '<span class="text-muted">—</span>'}</td>
       <td><span class="badge badge-category">${roleLabel}</span></td>
       <td><span class="badge badge-stock ${statusClass}">${statusLabel}</span></td>
       <td>
@@ -2058,6 +2059,7 @@ function openEditUser(id) {
   document.getElementById("user-modal-title").textContent = "Edit User";
   document.getElementById("user-id").value = user.id;
   document.getElementById("user-display-name-input").value = user.display_name;
+  document.getElementById("user-email-input").value = user.email || "";
   document.getElementById("user-username").value = user.username;
   document.getElementById("user-username").disabled = true;
   document.getElementById("user-password").value = "";
@@ -2080,6 +2082,7 @@ async function saveUser(e) {
   const id = document.getElementById("user-id").value;
   const payload = {
     display_name: document.getElementById("user-display-name-input").value,
+    email: document.getElementById("user-email-input").value,
     role: document.getElementById("user-role").value,
   };
 
