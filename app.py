@@ -1170,13 +1170,14 @@ def _row_to_shift(row, include_close=False):
         "id": row["id"],
         "status": row["status"],
         "opened_at": row["opened_at"],
-        "opening_float": round(row["opening_float"], 2),
     }
     if include_close or row["status"] == "closed":
         data.update({
             "closed_at": row["closed_at"],
             "counted_cash": round(row["counted_cash"] or 0, 2),
+            "counted_total": round(row["counted_cash"] or 0, 2),
             "expected_cash": round(row["expected_cash"] or 0, 2),
+            "expected_total": round(row["expected_cash"] or 0, 2),
             "variance": round(row["variance"] or 0, 2),
             "total_sales": round(row["total_sales"] or 0, 2),
             "cash_sales": round(row["cash_sales"] or 0, 2),
@@ -1201,12 +1202,20 @@ def fmt_rwf(amount):
     return f"RWF {amount:,.0f}"
 
 
-def _shift_close_message(variance):
+def _shift_close_message(row):
+    variance = row["variance"] or 0
     if variance == 0:
-        return "Cash matches your shift."
+        return "Your total matches what the system recorded for this shift."
+
     if variance > 0:
-        return f"You are over by {fmt_rwf(abs(variance))}."
-    return f"You are short by {fmt_rwf(abs(variance))}."
+        return (
+            f"You entered {fmt_rwf(row['counted_cash'] or 0)} — "
+            f"{fmt_rwf(abs(variance))} more than the {fmt_rwf(row['expected_cash'] or 0)} recorded here."
+        )
+    return (
+        f"You entered {fmt_rwf(row['counted_cash'] or 0)} — "
+        f"short by {fmt_rwf(abs(variance))} compared to the {fmt_rwf(row['expected_cash'] or 0)} recorded here."
+    )
 
 
 @app.route("/api/seller/shift", methods=["GET"])
@@ -1238,16 +1247,6 @@ def seller_shift_status():
 @app.route("/api/seller/shift/start", methods=["POST"])
 @role_required("seller")
 def seller_shift_start():
-    data = request.get_json(silent=True) or {}
-    opening_float = 0.0
-    if "opening_float" in data and data.get("opening_float") not in (None, ""):
-        try:
-            opening_float = round(float(data.get("opening_float")), 2)
-            if opening_float < 0:
-                return jsonify({"error": "Opening float cannot be negative"}), 400
-        except (TypeError, ValueError):
-            return jsonify({"error": "Enter a valid opening float amount"}), 400
-
     db = get_db()
     user = get_current_user(db)
     if get_open_seller_shift(db, user["id"]):
@@ -1257,8 +1256,8 @@ def seller_shift_start():
     cur = db.execute(
         """INSERT INTO seller_shifts
            (user_id, status, opened_at, opening_float)
-           VALUES (?, 'open', ?, ?)""",
-        (user["id"], ts, opening_float),
+           VALUES (?, 'open', ?, 0)""",
+        (user["id"], ts),
     )
     db.commit()
     row = db.execute(
@@ -1279,9 +1278,9 @@ def seller_shift_close():
     try:
         counted_cash = round(float(data.get("counted_cash")), 2)
         if counted_cash < 0:
-            return jsonify({"error": "Cash amount cannot be negative"}), 400
+            return jsonify({"error": "Total cannot be negative"}), 400
     except (TypeError, ValueError):
-        return jsonify({"error": "Enter a valid cash amount"}), 400
+        return jsonify({"error": "Enter a valid total amount"}), 400
 
     db = get_db()
     user = get_current_user(db)
@@ -1290,9 +1289,8 @@ def seller_shift_close():
         return jsonify({"error": "No open shift to close. Start a shift first."}), 400
 
     sales = _seller_sales_for_shift(db, shift["id"])
-    opening_float = round(shift["opening_float"], 2)
-    expected_cash = round(opening_float + sales["cash_sales"], 2)
-    variance = round(counted_cash - expected_cash, 2)
+    expected_total = sales["total_sales"]
+    variance = round(counted_cash - expected_total, 2)
     ts = now_iso()
 
     db.execute(
@@ -1312,7 +1310,7 @@ def seller_shift_close():
         (
             ts,
             counted_cash,
-            expected_cash,
+            expected_total,
             variance,
             sales["total_sales"],
             sales["cash_sales"],
@@ -1329,7 +1327,7 @@ def seller_shift_close():
         (shift["id"],),
     ).fetchone()
     closed = _row_to_shift(row, include_close=True)
-    message = _shift_close_message(variance)
+    message = _shift_close_message(row)
     return jsonify({
         "has_open_shift": False,
         "shift": closed,

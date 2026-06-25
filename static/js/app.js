@@ -1094,6 +1094,14 @@ function quickSell(id) {
 
 // ── Seller shift management ─────────────────────────────────────────────────
 
+const SHIFT_HERO_ICONS = {
+  idle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  open: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>`,
+  closed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+};
+
+let shiftTimerInterval = null;
+
 async function refreshSellerShift() {
   if (!isSeller()) return null;
   state.sellerShift = await api("/api/seller/shift");
@@ -1112,18 +1120,59 @@ function formatShiftRange(shift) {
   return `${opened} → ${formatDate(shift.closed_at)}`;
 }
 
-function formatShiftDuration(openedAt) {
+function formatShiftDuration(openedAt, long = false) {
   const start = new Date(openedAt.includes("T") ? openedAt : openedAt.replace(" ", "T"));
-  if (Number.isNaN(start.getTime())) return "";
+  if (Number.isNaN(start.getTime())) return "—";
   const mins = Math.floor((Date.now() - start.getTime()) / 60000);
-  if (mins < 1) return "Just started";
-  if (mins < 60) return `${mins} min`;
+  if (mins < 1) return long ? "Just started" : "0m";
+  if (mins < 60) return long ? `${mins} min` : `${mins}m`;
   const hours = Math.floor(mins / 60);
   const rem = mins % 60;
+  if (long) return rem ? `${hours}h ${rem}m` : `${hours}h`;
   return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
-function updateShiftHero(state, title, desc, badge) {
+function updateShiftDateBadge() {
+  const el = document.getElementById("shift-date-badge");
+  if (!el) return;
+  const now = new Date();
+  el.innerHTML = `${UI_ICONS.calendar}<span>${now.toLocaleDateString("en-RW", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  })}</span>`;
+}
+
+function updateShiftHeroIcon(kind) {
+  const iconEl = document.getElementById("shift-hero-icon");
+  if (iconEl) iconEl.innerHTML = SHIFT_HERO_ICONS[kind] || SHIFT_HERO_ICONS.idle;
+}
+
+function stopShiftTimer() {
+  if (shiftTimerInterval) {
+    clearInterval(shiftTimerInterval);
+    shiftTimerInterval = null;
+  }
+}
+
+function startShiftTimer(openedAt) {
+  stopShiftTimer();
+  const aside = document.getElementById("shift-hero-aside");
+  const timerEl = document.getElementById("shift-hero-timer");
+  if (!aside || !timerEl) return;
+
+  const tick = () => {
+    timerEl.textContent = formatShiftDuration(openedAt);
+    const metaDuration = document.getElementById("shift-meta-duration");
+    if (metaDuration) metaDuration.textContent = formatShiftDuration(openedAt, true);
+  };
+
+  aside.hidden = false;
+  tick();
+  shiftTimerInterval = setInterval(tick, 30000);
+}
+
+function updateShiftHero(state, title, desc, badge, iconKind = "idle") {
   const hero = document.getElementById("shift-hero");
   const badgeEl = document.getElementById("shift-hero-badge");
   const titleEl = document.getElementById("shift-hero-title");
@@ -1132,6 +1181,38 @@ function updateShiftHero(state, title, desc, badge) {
   if (badgeEl) badgeEl.textContent = badge;
   if (titleEl) titleEl.textContent = title;
   if (descEl) descEl.textContent = desc;
+  updateShiftHeroIcon(iconKind);
+  if (state !== "open") {
+    stopShiftTimer();
+    const aside = document.getElementById("shift-hero-aside");
+    if (aside) aside.hidden = true;
+  }
+}
+
+function setShiftPanelsMode(mode) {
+  const panels = document.getElementById("shift-panels");
+  if (!panels) return;
+  panels.classList.remove("is-idle", "is-active", "is-closed");
+  if (mode) panels.classList.add(mode);
+}
+
+function paymentBarWidth(amount, total) {
+  if (!total || total <= 0) return 0;
+  return Math.max(4, Math.round((amount / total) * 100));
+}
+
+function renderPaymentRow(label, amount, total, cls) {
+  const width = paymentBarWidth(amount, total);
+  return `
+    <div class="shift-payment-row">
+      <span class="shift-payment-dot ${cls}"></span>
+      <span class="shift-payment-label">${label}</span>
+      <strong>${fmt.format(amount)}</strong>
+      <div class="shift-payment-bar-wrap">
+        <div class="shift-payment-bar ${cls}" style="width: ${width}%"></div>
+      </div>
+    </div>
+  `;
 }
 
 function updateShiftSteps(activeStep) {
@@ -1154,42 +1235,45 @@ function renderShiftSummary(shift, message) {
 
   const status = reconcileStatusLabel(shift.status_label || "balanced");
   const varianceAbs = fmt.format(Math.abs(shift.variance || 0));
+  const expected = shift.expected_total ?? shift.expected_cash ?? shift.total_sales;
+  const counted = shift.counted_total ?? shift.counted_cash;
   const varianceLine =
     shift.status_label === "balanced"
-      ? "Your cash matches opening float plus cash sales for this shift."
+      ? "Your total matches what was recorded in the system for this shift."
       : shift.status_label === "over"
-        ? `You have ${varianceAbs} more cash than expected.`
-        : `You are short by ${varianceAbs}.`;
+        ? `You entered ${varianceAbs} more than recorded.`
+        : `You are short by ${varianceAbs} compared to what was recorded.`;
+
+  const payTotal = (shift.cash_sales || 0) + (shift.momo_sales || 0) + (shift.visa_sales || 0);
+  const varianceChip =
+    shift.status_label === "balanced"
+      ? "Totals match"
+      : shift.status_label === "over"
+        ? `+${varianceAbs}`
+        : `−${varianceAbs}`;
 
   resultEl.innerHTML = `
     <div class="reconcile-summary">
-      <div class="shift-result-header">
-        <div class="shift-result-icon ${status.cls}">${status.icon}</div>
-        <span class="shift-result-status ${status.cls}">${status.text}</span>
-        <p class="shift-result-message">${esc(message || varianceLine)}</p>
-        <p class="shift-range-label">${esc(formatShiftRange(shift))}</p>
-      </div>
-      <div class="reconcile-grid">
-        ${statCard("revenue", UI_ICONS.revenue, "Total sold", fmt.format(shift.total_sales), `${fmtNum.format(shift.units_sold)} units · ${shift.sale_count} lines`)}
-        ${statCard("sales", UI_ICONS.sales, "Expected cash", fmt.format(shift.expected_cash), `Float ${fmt.format(shift.opening_float)} + cash ${fmt.format(shift.cash_sales)}`)}
-        ${statCard("month", UI_ICONS.chart, "Cash counted", fmt.format(shift.counted_cash), varianceLine)}
-      </div>
-      <div class="reconcile-payments">
-        <h4>Payment breakdown</h4>
-        <div class="shift-payment-row">
-          <span class="shift-payment-dot cash"></span>
-          <span>Cash</span>
-          <strong>${fmt.format(shift.cash_sales)}</strong>
+      <div class="shift-result-layout">
+        <div class="shift-result-hero ${status.cls}">
+          <div class="shift-result-icon ${status.cls}">${status.icon}</div>
+          <span class="shift-result-status ${status.cls}">${status.text}</span>
+          <p class="shift-result-message">${esc(message || varianceLine)}</p>
+          <p class="shift-range-label">${esc(formatShiftRange(shift))}</p>
+          <span class="shift-variance-chip ${status.cls}">${esc(varianceChip)}</span>
         </div>
-        <div class="shift-payment-row">
-          <span class="shift-payment-dot momo"></span>
-          <span>MoMo</span>
-          <strong>${fmt.format(shift.momo_sales)}</strong>
-        </div>
-        <div class="shift-payment-row">
-          <span class="shift-payment-dot visa"></span>
-          <span>Visa</span>
-          <strong>${fmt.format(shift.visa_sales)}</strong>
+        <div class="shift-result-body">
+          <div class="reconcile-grid">
+            ${statCard("revenue", UI_ICONS.revenue, "Recorded here", fmt.format(shift.total_sales), "What the system logged")}
+            ${statCard("sales", UI_ICONS.sales, "You entered", fmt.format(counted), "Your total (all payments)")}
+            ${statCard("month", UI_ICONS.chart, "Difference", fmt.format(Math.abs(shift.variance || 0)), shift.status_label === "balanced" ? "No difference" : varianceLine)}
+          </div>
+          <div class="reconcile-payments">
+            <h4>Recorded breakdown</h4>
+            ${renderPaymentRow("Cash", shift.cash_sales, payTotal, "cash")}
+            ${renderPaymentRow("MoMo", shift.momo_sales, payTotal, "momo")}
+            ${renderPaymentRow("Visa", shift.visa_sales, payTotal, "visa")}
+          </div>
         </div>
       </div>
       <p class="reconcile-closed-note">Shift closed — start a new one when you are ready to sell again.</p>
@@ -1201,8 +1285,10 @@ function renderShiftSummary(shift, message) {
     heroState,
     status.text === "Balanced" ? "Shift closed — all good!" : `Shift closed — ${status.text.toLowerCase()}`,
     message || varianceLine,
-    "Closed"
+    "Closed",
+    "closed"
   );
+  setShiftPanelsMode("is-closed");
   updateShiftSteps("close");
   document.querySelectorAll(".shift-step").forEach((s) => s.classList.add("is-done"));
 }
@@ -1226,19 +1312,15 @@ function renderShiftView() {
   if (resultCard) resultCard.hidden = !closedShift;
 
   if (open && data.shift) {
-    const duration = formatShiftDuration(data.shift.opened_at);
+    const duration = formatShiftDuration(data.shift.opened_at, true);
     if (openedLabel) {
-      openedLabel.textContent = `Started ${formatDate(data.shift.opened_at)}${duration ? ` · ${duration} elapsed` : ""}`;
+      openedLabel.textContent = `Started ${formatDate(data.shift.opened_at)}`;
     }
     if (activeMeta) {
       activeMeta.innerHTML = `
-        <div class="shift-meta-item">
-          <span>Opening float</span>
-          <strong>${fmt.format(data.shift.opening_float)}</strong>
-        </div>
-        <div class="shift-meta-item">
-          <span>Status</span>
-          <strong>Selling</strong>
+        <div class="shift-meta-item is-live shift-meta-item-wide">
+          <span>Elapsed</span>
+          <strong id="shift-meta-duration">${esc(duration)}</strong>
         </div>
       `;
     }
@@ -1246,9 +1328,12 @@ function renderShiftView() {
     updateShiftHero(
       "open",
       "Your shift is live",
-      "Head to Sell to take orders. Come back here when you are done to count your cash.",
-      "In progress"
+      "Sell during your shift. When you finish, enter the total you collected (cash + MoMo + Visa) to check against the system.",
+      "In progress",
+      "open"
     );
+    startShiftTimer(data.shift.opened_at);
+    setShiftPanelsMode("is-active");
     updateShiftSteps("sell");
   } else if (closedShift && resultCard) {
     renderShiftSummary(closedShift);
@@ -1256,15 +1341,19 @@ function renderShiftView() {
     updateShiftHero(
       "idle",
       "Ready to start your shift",
-      "Count the cash in your drawer, enter your opening float, then tap start.",
-      "Not started"
+      "Tap start when you are at the counter. Sales stay hidden until you close and enter your total.",
+      "Not started",
+      "idle"
     );
+    setShiftPanelsMode("is-idle");
     updateShiftSteps("start");
   }
 }
 
 async function loadReconcileView() {
   if (!isSeller()) return;
+
+  updateShiftDateBadge();
 
   try {
     await refreshSellerShift();
@@ -1279,18 +1368,11 @@ async function submitStartShift(e) {
   if (!isSeller()) return;
 
   const btn = document.getElementById("btn-start-shift");
-  const openingFloat = parseFloat(document.getElementById("shift-opening-float")?.value || "0");
-
-  if (Number.isNaN(openingFloat) || openingFloat < 0) {
-    toast("Enter a valid opening float", "error");
-    return;
-  }
-
   btn.disabled = true;
   try {
     const data = await api("/api/seller/shift/start", {
       method: "POST",
-      body: JSON.stringify({ opening_float: openingFloat }),
+      body: JSON.stringify({}),
     });
     state.sellerShift = data;
     toast(data.message || "Shift started");
@@ -1312,7 +1394,7 @@ async function submitCloseShift(e) {
   const countedCash = parseFloat(input?.value);
 
   if (Number.isNaN(countedCash) || countedCash < 0) {
-    toast("Enter a valid cash amount", "error");
+    toast("Enter a valid total amount", "error");
     return;
   }
 
@@ -1342,21 +1424,16 @@ function showStartShiftForm() {
   const resultCard = document.getElementById("shift-result-card");
   if (resultCard) resultCard.hidden = true;
   renderShiftView();
-  document.getElementById("shift-opening-float")?.focus();
+  document.getElementById("btn-start-shift")?.focus();
 }
 
 function initShiftPresets() {
-  document.querySelectorAll("#float-presets .shift-preset").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const input = document.getElementById("shift-opening-float");
-      if (input) input.value = btn.dataset.float;
-    });
-  });
-
   document.querySelectorAll("#cash-presets .shift-preset").forEach((btn) => {
     btn.addEventListener("click", () => {
       const input = document.getElementById("reconcile-cash-amount");
       if (input) input.value = btn.dataset.cash;
+      document.querySelectorAll("#cash-presets .shift-preset").forEach((b) => b.classList.remove("is-active"));
+      btn.classList.add("is-active");
     });
   });
 }
