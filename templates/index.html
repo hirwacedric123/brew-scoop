@@ -362,76 +362,130 @@
 
       <!-- Seller shift management -->
       <section id="view-reconcile" class="view">
-        <header class="topbar">
+        <header class="topbar shift-topbar">
           <div class="topbar-heading">
             <div>
               <p class="page-eyebrow page-eyebrow-caramel">Your shift</p>
               <h2>My Shift</h2>
-              <p id="reconcile-subtitle">Start when you begin selling, close when you finish — even if it crosses midnight</p>
+              <p id="reconcile-subtitle" class="shift-subtitle">Start when you begin selling, close when you finish — even across midnight</p>
             </div>
           </div>
         </header>
 
-        <div class="reconcile-layout">
-          <div class="card card-accent-top" id="shift-start-card">
-            <div class="card-header">
-              <h3>Start Shift</h3>
+        <div class="shift-page">
+          <div class="shift-hero" id="shift-hero" data-state="idle">
+            <div class="shift-hero-glow" aria-hidden="true"></div>
+            <div class="shift-hero-icon" id="shift-hero-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             </div>
-            <div class="card-body">
-              <p class="text-muted reconcile-hint">
-                Count the cash in your drawer before you start (opening float). You can leave it at 0 if you have no starting cash.
-              </p>
-              <form id="shift-start-form">
-                <div class="form-group">
-                  <label for="shift-opening-float">Opening float (RWF)</label>
-                  <input type="number" id="shift-opening-float" min="0" step="1" value="0" placeholder="e.g. 10000">
-                </div>
-                <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-start-shift">
-                  Start Shift
-                </button>
-              </form>
+            <div class="shift-hero-body">
+              <span class="shift-hero-badge" id="shift-hero-badge">Not started</span>
+              <h3 class="shift-hero-title" id="shift-hero-title">Ready to start your shift</h3>
+              <p class="shift-hero-desc" id="shift-hero-desc">Count your opening cash, then tap start when you are at the counter.</p>
             </div>
           </div>
 
-          <div class="card card-accent-top" id="shift-open-card" hidden>
-            <div class="card-header">
-              <h3>Shift in progress</h3>
-              <span class="status-pill status-pill-ok">Open</span>
-            </div>
-            <div class="card-body">
-              <p class="text-muted reconcile-hint" id="shift-opened-label"></p>
-              <div class="shift-open-actions">
-                <button type="button" class="btn btn-primary" data-view="sell">Go to Sell</button>
+          <ol class="shift-steps" id="shift-steps" aria-label="Shift workflow">
+            <li class="shift-step" data-step="start">
+              <span class="shift-step-num">1</span>
+              <span class="shift-step-label">Start</span>
+            </li>
+            <li class="shift-step" data-step="sell">
+              <span class="shift-step-num">2</span>
+              <span class="shift-step-label">Sell</span>
+            </li>
+            <li class="shift-step" data-step="close">
+              <span class="shift-step-num">3</span>
+              <span class="shift-step-label">Close</span>
+            </li>
+          </ol>
+
+          <div class="shift-panels">
+            <div class="shift-panel shift-panel-start card" id="shift-start-card">
+              <div class="shift-panel-header">
+                <div class="shift-panel-icon shift-panel-icon-start">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                </div>
+                <div>
+                  <h3>Start shift</h3>
+                  <p>Opening float is the cash already in your drawer before you sell anything.</p>
+                </div>
               </div>
-            </div>
-          </div>
-
-          <div class="card card-accent-top" id="shift-close-card" hidden>
-            <div class="card-header">
-              <h3>Close Shift</h3>
-              <span class="text-muted" id="shift-close-label"></span>
-            </div>
-            <div class="card-body">
-              <p class="text-muted reconcile-hint">
-                Count all cash in your drawer (opening float + cash sales). Your sales totals will appear after you close.
-              </p>
-              <form id="shift-close-form">
+              <form id="shift-start-form" class="shift-form">
                 <div class="form-group">
-                  <label for="reconcile-cash-amount">Cash in hand (RWF)</label>
-                  <input type="number" id="reconcile-cash-amount" min="0" step="1" required placeholder="e.g. 45000">
+                  <label for="shift-opening-float">Opening float</label>
+                  <div class="shift-cash-input">
+                    <span class="shift-cash-prefix">RWF</span>
+                    <input type="number" id="shift-opening-float" min="0" step="1" value="0" placeholder="0">
+                  </div>
                 </div>
-                <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-reconcile">
-                  Close Shift &amp; Check Cash
+                <div class="shift-presets" id="float-presets">
+                  <button type="button" class="shift-preset" data-float="0">No float</button>
+                  <button type="button" class="shift-preset" data-float="5000">5,000</button>
+                  <button type="button" class="shift-preset" data-float="10000">10,000</button>
+                  <button type="button" class="shift-preset" data-float="20000">20,000</button>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg btn-block shift-cta" id="btn-start-shift">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Start shift
                 </button>
               </form>
             </div>
-          </div>
 
-          <div class="card card-accent-top" id="shift-result-card" hidden>
-            <div class="card-body">
+            <div class="shift-panel shift-panel-active card" id="shift-open-card" hidden>
+              <div class="shift-panel-header">
+                <div class="shift-panel-icon shift-panel-icon-active">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <div>
+                  <h3>Shift active</h3>
+                  <p id="shift-opened-label">—</p>
+                </div>
+                <span class="shift-live-dot" title="Shift open"><span></span></span>
+              </div>
+              <div class="shift-active-meta" id="shift-active-meta"></div>
+              <button type="button" class="btn btn-primary btn-block shift-cta" data-view="sell">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                Go to sell
+              </button>
+            </div>
+
+            <div class="shift-panel shift-panel-close card" id="shift-close-card" hidden>
+              <div class="shift-panel-header">
+                <div class="shift-panel-icon shift-panel-icon-close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+                <div>
+                  <h3>Close shift</h3>
+                  <p>Count every note and coin in your drawer, then check against the system.</p>
+                </div>
+              </div>
+              <form id="shift-close-form" class="shift-form">
+                <div class="form-group">
+                  <label for="reconcile-cash-amount">Cash in hand</label>
+                  <div class="shift-cash-input">
+                    <span class="shift-cash-prefix">RWF</span>
+                    <input type="number" id="reconcile-cash-amount" min="0" step="1" required placeholder="0">
+                  </div>
+                </div>
+                <div class="shift-presets" id="cash-presets">
+                  <button type="button" class="shift-preset" data-cash="10000">10,000</button>
+                  <button type="button" class="shift-preset" data-cash="25000">25,000</button>
+                  <button type="button" class="shift-preset" data-cash="50000">50,000</button>
+                  <button type="button" class="shift-preset" data-cash="100000">100,000</button>
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-close" id="btn-reconcile">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  Close &amp; check cash
+                </button>
+              </form>
+            </div>
+
+            <div class="shift-panel shift-panel-result card" id="shift-result-card" hidden>
               <div id="reconcile-result"></div>
-              <button type="button" class="btn btn-primary btn-lg btn-block" id="btn-new-shift">
-                Start New Shift
+              <button type="button" class="btn btn-primary btn-lg btn-block shift-cta" id="btn-new-shift">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Start new shift
               </button>
             </div>
           </div>

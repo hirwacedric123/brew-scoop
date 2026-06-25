@@ -1101,15 +1101,51 @@ async function refreshSellerShift() {
 }
 
 function reconcileStatusLabel(status) {
-  if (status === "balanced") return { text: "Balanced", cls: "status-pill-ok" };
-  if (status === "over") return { text: "Over", cls: "status-pill-warn" };
-  return { text: "Short", cls: "status-pill-warn" };
+  if (status === "balanced") return { text: "Balanced", cls: "balanced", icon: UI_ICONS.check };
+  if (status === "over") return { text: "Over", cls: "over", icon: UI_ICONS.alert };
+  return { text: "Short", cls: "short", icon: UI_ICONS.alert };
 }
 
 function formatShiftRange(shift) {
   const opened = formatDate(shift.opened_at);
   if (!shift.closed_at) return `Started ${opened}`;
   return `${opened} → ${formatDate(shift.closed_at)}`;
+}
+
+function formatShiftDuration(openedAt) {
+  const start = new Date(openedAt.includes("T") ? openedAt : openedAt.replace(" ", "T"));
+  if (Number.isNaN(start.getTime())) return "";
+  const mins = Math.floor((Date.now() - start.getTime()) / 60000);
+  if (mins < 1) return "Just started";
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+function updateShiftHero(state, title, desc, badge) {
+  const hero = document.getElementById("shift-hero");
+  const badgeEl = document.getElementById("shift-hero-badge");
+  const titleEl = document.getElementById("shift-hero-title");
+  const descEl = document.getElementById("shift-hero-desc");
+  if (hero) hero.dataset.state = state;
+  if (badgeEl) badgeEl.textContent = badge;
+  if (titleEl) titleEl.textContent = title;
+  if (descEl) descEl.textContent = desc;
+}
+
+function updateShiftSteps(activeStep) {
+  const steps = document.querySelectorAll(".shift-step");
+  const order = ["start", "sell", "close"];
+  const activeIdx = order.indexOf(activeStep);
+
+  steps.forEach((step) => {
+    const stepName = step.dataset.step;
+    const idx = order.indexOf(stepName);
+    step.classList.remove("is-active", "is-done");
+    if (idx < activeIdx) step.classList.add("is-done");
+    else if (idx === activeIdx) step.classList.add("is-active");
+  });
 }
 
 function renderShiftSummary(shift, message) {
@@ -1122,30 +1158,53 @@ function renderShiftSummary(shift, message) {
     shift.status_label === "balanced"
       ? "Your cash matches opening float plus cash sales for this shift."
       : shift.status_label === "over"
-        ? `You have ${varianceAbs} more cash than expected for this shift.`
-        : `You are short by ${varianceAbs} for this shift.`;
+        ? `You have ${varianceAbs} more cash than expected.`
+        : `You are short by ${varianceAbs}.`;
 
   resultEl.innerHTML = `
     <div class="reconcile-summary">
-      <div class="reconcile-status">
-        <span class="status-pill ${status.cls}">${status.text}</span>
-        <p class="reconcile-message">${esc(message || varianceLine)}</p>
-        <p class="text-muted shift-range-label">${esc(formatShiftRange(shift))}</p>
+      <div class="shift-result-header">
+        <div class="shift-result-icon ${status.cls}">${status.icon}</div>
+        <span class="shift-result-status ${status.cls}">${status.text}</span>
+        <p class="shift-result-message">${esc(message || varianceLine)}</p>
+        <p class="shift-range-label">${esc(formatShiftRange(shift))}</p>
       </div>
       <div class="reconcile-grid">
-        ${statCard("revenue", UI_ICONS.revenue, "Total Sold", fmt.format(shift.total_sales), `${fmtNum.format(shift.units_sold)} units · ${shift.sale_count} lines`)}
-        ${statCard("sales", UI_ICONS.sales, "Expected Cash", fmt.format(shift.expected_cash), `Float ${fmt.format(shift.opening_float)} + cash sales ${fmt.format(shift.cash_sales)}`)}
-        ${statCard("month", UI_ICONS.chart, "Cash Counted", fmt.format(shift.counted_cash), varianceLine)}
+        ${statCard("revenue", UI_ICONS.revenue, "Total sold", fmt.format(shift.total_sales), `${fmtNum.format(shift.units_sold)} units · ${shift.sale_count} lines`)}
+        ${statCard("sales", UI_ICONS.sales, "Expected cash", fmt.format(shift.expected_cash), `Float ${fmt.format(shift.opening_float)} + cash ${fmt.format(shift.cash_sales)}`)}
+        ${statCard("month", UI_ICONS.chart, "Cash counted", fmt.format(shift.counted_cash), varianceLine)}
       </div>
-      <div class="reconcile-payments card card-flat">
+      <div class="reconcile-payments">
         <h4>Payment breakdown</h4>
-        <div class="preview-row"><span>Cash</span><strong>${fmt.format(shift.cash_sales)}</strong></div>
-        <div class="preview-row"><span>MoMo</span><strong>${fmt.format(shift.momo_sales)}</strong></div>
-        <div class="preview-row"><span>Visa</span><strong>${fmt.format(shift.visa_sales)}</strong></div>
+        <div class="shift-payment-row">
+          <span class="shift-payment-dot cash"></span>
+          <span>Cash</span>
+          <strong>${fmt.format(shift.cash_sales)}</strong>
+        </div>
+        <div class="shift-payment-row">
+          <span class="shift-payment-dot momo"></span>
+          <span>MoMo</span>
+          <strong>${fmt.format(shift.momo_sales)}</strong>
+        </div>
+        <div class="shift-payment-row">
+          <span class="shift-payment-dot visa"></span>
+          <span>Visa</span>
+          <strong>${fmt.format(shift.visa_sales)}</strong>
+        </div>
       </div>
-      <p class="text-muted reconcile-closed-note">Shift closed. Start a new shift when you are ready to sell again.</p>
+      <p class="reconcile-closed-note">Shift closed — start a new one when you are ready to sell again.</p>
     </div>
   `;
+
+  const heroState = `closed-${shift.status_label || "balanced"}`;
+  updateShiftHero(
+    heroState,
+    status.text === "Balanced" ? "Shift closed — all good!" : `Shift closed — ${status.text.toLowerCase()}`,
+    message || varianceLine,
+    "Closed"
+  );
+  updateShiftSteps("close");
+  document.querySelectorAll(".shift-step").forEach((s) => s.classList.add("is-done"));
 }
 
 function renderShiftView() {
@@ -1154,7 +1213,7 @@ function renderShiftView() {
   const closeCard = document.getElementById("shift-close-card");
   const resultCard = document.getElementById("shift-result-card");
   const openedLabel = document.getElementById("shift-opened-label");
-  const closeLabel = document.getElementById("shift-close-label");
+  const activeMeta = document.getElementById("shift-active-meta");
   const cashInput = document.getElementById("reconcile-cash-amount");
 
   const data = state.sellerShift;
@@ -1167,17 +1226,40 @@ function renderShiftView() {
   if (resultCard) resultCard.hidden = !closedShift;
 
   if (open && data.shift) {
+    const duration = formatShiftDuration(data.shift.opened_at);
     if (openedLabel) {
-      openedLabel.textContent = `Started ${formatDate(data.shift.opened_at)} · Opening float ${fmt.format(data.shift.opening_float)}`;
+      openedLabel.textContent = `Started ${formatDate(data.shift.opened_at)}${duration ? ` · ${duration} elapsed` : ""}`;
     }
-    if (closeLabel) {
-      closeLabel.textContent = formatDate(data.shift.opened_at);
+    if (activeMeta) {
+      activeMeta.innerHTML = `
+        <div class="shift-meta-item">
+          <span>Opening float</span>
+          <strong>${fmt.format(data.shift.opening_float)}</strong>
+        </div>
+        <div class="shift-meta-item">
+          <span>Status</span>
+          <strong>Selling</strong>
+        </div>
+      `;
     }
     if (cashInput) cashInput.value = "";
-  }
-
-  if (closedShift && resultCard) {
+    updateShiftHero(
+      "open",
+      "Your shift is live",
+      "Head to Sell to take orders. Come back here when you are done to count your cash.",
+      "In progress"
+    );
+    updateShiftSteps("sell");
+  } else if (closedShift && resultCard) {
     renderShiftSummary(closedShift);
+  } else {
+    updateShiftHero(
+      "idle",
+      "Ready to start your shift",
+      "Count the cash in your drawer, enter your opening float, then tap start.",
+      "Not started"
+    );
+    updateShiftSteps("start");
   }
 }
 
@@ -1261,6 +1343,22 @@ function showStartShiftForm() {
   if (resultCard) resultCard.hidden = true;
   renderShiftView();
   document.getElementById("shift-opening-float")?.focus();
+}
+
+function initShiftPresets() {
+  document.querySelectorAll("#float-presets .shift-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("shift-opening-float");
+      if (input) input.value = btn.dataset.float;
+    });
+  });
+
+  document.querySelectorAll("#cash-presets .shift-preset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("reconcile-cash-amount");
+      if (input) input.value = btn.dataset.cash;
+    });
+  });
 }
 
 // ── Restock ────────────────────────────────────────────────────────────────
@@ -2084,6 +2182,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initNavigation();
   initSalesReports();
   initPosShortcuts();
+  initShiftPresets();
 
   if (isSeller()) {
     loadCategories().then(() => {
