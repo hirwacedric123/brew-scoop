@@ -18,6 +18,12 @@
   flex-wrap: wrap;
   gap: 0.45rem;
   margin-bottom: 1.25rem;
+  align-items: center;
+}
+
+#sales-seller-filter {
+  margin-left: auto;
+  min-width: 180px;
 }
 
 .payment-breakdown {

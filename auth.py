@@ -5,7 +5,7 @@ from functools import wraps
 from flask import jsonify, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
-ROLES = ("admin", "stock_manager")
+ROLES = ("admin", "stock_manager", "seller")
 
 
 def init_users_table(db):
@@ -16,7 +16,7 @@ def init_users_table(db):
             username TEXT NOT NULL UNIQUE COLLATE NOCASE,
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'stock_manager')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'stock_manager', 'seller')),
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -141,3 +141,25 @@ def admin_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+def role_required(*roles):
+    allowed = frozenset(roles)
+
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            from app import get_db
+
+            user = get_current_user(get_db())
+            if user is None:
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Authentication required"}), 401
+                return redirect(url_for("login", next=request.path))
+            if user["role"] not in allowed:
+                return jsonify({"error": "Access denied"}), 403
+            return view(*args, **kwargs)
+
+        return wrapped
+
+    return decorator

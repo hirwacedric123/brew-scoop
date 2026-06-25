@@ -1,0 +1,84 @@
+.reconcile-layout {
+  max-width: 640px;
+}
+
+.reconcile-hint {
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+.reconcile-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.reconcile-status {
+  text-align: center;
+}
+
+.reconcile-message {
+  margin-top: 0.75rem;
+  font-size: 1.05rem;
+}
+
+.reconcile-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.reconcile-payments {
+  padding: 1rem 1.25rem;
+}
+
+.reconcile-payments h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.reconcile-closed-note {
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.shift-range-label {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.shift-open-actions {
+  margin-top: 1rem;
+}
+
+.shift-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid var(--border, #e8e4df);
+}
+
+.shift-banner-warn {
+  background: #fff8ef;
+  border-color: #e8c89a;
+}
+
+.shift-banner p {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-muted, #6b6560);
+}
+
+.sell-locked {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.card-flat {
+  background: var(--surface-2, #f8f6f3);
+  border: 1px solid var(--border, #e8e4df);
+  border-radius: var(--radius-md, 12px);
+}

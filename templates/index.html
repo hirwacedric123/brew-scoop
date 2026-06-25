@@ -28,6 +28,7 @@
       </div>
 
       <nav class="nav">
+        {% if current_user.role != 'seller' %}
         <button class="nav-item active" data-view="dashboard">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
           <span>Dashboard</span>
@@ -36,10 +37,17 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
           <span>Products</span>
         </button>
-        <button class="nav-item" data-view="sell">
+        {% endif %}
+        <button class="nav-item{% if current_user.role == 'seller' %} active{% endif %}" data-view="sell">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           <span>Sell</span>
         </button>
+        {% if current_user.role == 'seller' %}
+        <button class="nav-item" data-view="reconcile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>My Shift</span>
+        </button>
+        {% else %}
         <button class="nav-item" data-view="restock">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
           <span>Restock</span>
@@ -52,6 +60,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
           <span>Sales Reports</span>
         </button>
+        {% endif %}
         {% if current_user.role == 'admin' %}
         <button class="nav-item" data-view="admin">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -88,7 +97,7 @@
 
     <main class="main">
       <!-- Dashboard -->
-      <section id="view-dashboard" class="view active">
+      <section id="view-dashboard" class="view{% if current_user.role != 'seller' %} active{% endif %}">
         <header class="topbar dashboard-topbar">
           <div class="topbar-heading">
             <div>
@@ -230,7 +239,7 @@
       </section>
 
       <!-- Sell -->
-      <section id="view-sell" class="view">
+      <section id="view-sell" class="view{% if current_user.role == 'seller' %} active{% endif %}">
         <header class="topbar">
           <div class="topbar-heading">
             <div>
@@ -252,6 +261,14 @@
             <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Checkout</span>
             <span><kbd>Esc</kbd> Clear cart</span>
           </div>
+        </div>
+
+        <div class="shift-banner shift-banner-warn" id="sell-shift-banner" hidden>
+          <div>
+            <strong>Shift not started</strong>
+            <p>Start your shift before you can sell.</p>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" data-view="reconcile">Start Shift</button>
         </div>
 
         <div class="sell-layout" id="sell-layout">
@@ -337,6 +354,84 @@
               </button>
               <button type="button" class="btn btn-ghost btn-sm btn-block" id="btn-clear-cart">
                 Clear Cart
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Seller shift management -->
+      <section id="view-reconcile" class="view">
+        <header class="topbar">
+          <div class="topbar-heading">
+            <div>
+              <p class="page-eyebrow page-eyebrow-caramel">Your shift</p>
+              <h2>My Shift</h2>
+              <p id="reconcile-subtitle">Start when you begin selling, close when you finish — even if it crosses midnight</p>
+            </div>
+          </div>
+        </header>
+
+        <div class="reconcile-layout">
+          <div class="card card-accent-top" id="shift-start-card">
+            <div class="card-header">
+              <h3>Start Shift</h3>
+            </div>
+            <div class="card-body">
+              <p class="text-muted reconcile-hint">
+                Count the cash in your drawer before you start (opening float). You can leave it at 0 if you have no starting cash.
+              </p>
+              <form id="shift-start-form">
+                <div class="form-group">
+                  <label for="shift-opening-float">Opening float (RWF)</label>
+                  <input type="number" id="shift-opening-float" min="0" step="1" value="0" placeholder="e.g. 10000">
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-start-shift">
+                  Start Shift
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card card-accent-top" id="shift-open-card" hidden>
+            <div class="card-header">
+              <h3>Shift in progress</h3>
+              <span class="status-pill status-pill-ok">Open</span>
+            </div>
+            <div class="card-body">
+              <p class="text-muted reconcile-hint" id="shift-opened-label"></p>
+              <div class="shift-open-actions">
+                <button type="button" class="btn btn-primary" data-view="sell">Go to Sell</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card-accent-top" id="shift-close-card" hidden>
+            <div class="card-header">
+              <h3>Close Shift</h3>
+              <span class="text-muted" id="shift-close-label"></span>
+            </div>
+            <div class="card-body">
+              <p class="text-muted reconcile-hint">
+                Count all cash in your drawer (opening float + cash sales). Your sales totals will appear after you close.
+              </p>
+              <form id="shift-close-form">
+                <div class="form-group">
+                  <label for="reconcile-cash-amount">Cash in hand (RWF)</label>
+                  <input type="number" id="reconcile-cash-amount" min="0" step="1" required placeholder="e.g. 45000">
+                </div>
+                <button type="submit" class="btn btn-primary btn-lg btn-block" id="btn-reconcile">
+                  Close Shift &amp; Check Cash
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div class="card card-accent-top" id="shift-result-card" hidden>
+            <div class="card-body">
+              <div id="reconcile-result"></div>
+              <button type="button" class="btn btn-primary btn-lg btn-block" id="btn-new-shift">
+                Start New Shift
               </button>
             </div>
           </div>
@@ -595,6 +690,9 @@
             <option value="restock">Restocks</option>
             <option value="adjustment">Adjustments</option>
           </select>
+          <select id="history-seller-filter" aria-label="Filter by seller">
+            <option value="">All Sellers</option>
+          </select>
         </div>
 
         <div class="table-wrap table-premium">
@@ -607,6 +705,7 @@
                 <th>Qty</th>
                 <th>Amount</th>
                 <th>Payment</th>
+                <th>Seller</th>
                 <th>Notes</th>
               </tr>
             </thead>
@@ -632,6 +731,9 @@
           <button type="button" class="period-btn" data-preset="week">This Week</button>
           <button type="button" class="period-btn" data-preset="month">This Month</button>
           <button type="button" class="period-btn" data-preset="custom">Custom Range</button>
+          <select id="sales-seller-filter" aria-label="Filter by seller">
+            <option value="">All Sellers</option>
+          </select>
         </div>
 
         <div class="custom-range-bar" id="custom-range-bar" hidden>
@@ -673,6 +775,7 @@
                     <th>Qty</th>
                     <th>Amount</th>
                     <th>Payment</th>
+                    <th>Seller</th>
                   </tr>
                 </thead>
                 <tbody id="sales-detail-body"></tbody>
@@ -754,14 +857,22 @@
     </main>
 
     <nav class="bottom-nav" id="bottom-nav" aria-label="Mobile navigation">
+      {% if current_user.role != 'seller' %}
       <button type="button" class="bottom-nav-item active" data-view="dashboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
         <span>Home</span>
       </button>
-      <button type="button" class="bottom-nav-item bottom-nav-sell" data-view="sell">
+      {% endif %}
+      <button type="button" class="bottom-nav-item bottom-nav-sell{% if current_user.role == 'seller' %} active{% endif %}" data-view="sell">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
         <span>Sell</span>
       </button>
+      {% if current_user.role == 'seller' %}
+      <button type="button" class="bottom-nav-item" data-view="reconcile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>My Shift</span>
+      </button>
+      {% else %}
       <button type="button" class="bottom-nav-item" data-view="products">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
         <span>Products</span>
@@ -770,6 +881,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
         <span>More</span>
       </button>
+      {% endif %}
     </nav>
     </div>
   </div>
@@ -798,6 +910,7 @@
         <div class="form-group">
           <label for="user-role">Role</label>
           <select id="user-role">
+            <option value="seller">Seller</option>
             <option value="stock_manager">Stock Manager</option>
             <option value="admin">Administrator</option>
           </select>

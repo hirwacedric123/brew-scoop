@@ -14,6 +14,9 @@ const state = {
   salesTo: null,
   salesReport: null,
   selectedSalesDate: null,
+  historySellerId: "",
+  salesSellerId: "",
+  sellers: [],
   cart: [],
   paymentMethod: null,
   posMode: false,
@@ -21,6 +24,7 @@ const state = {
   deleteUserId: null,
   deleteCategoryId: null,
   currentUser: window.CURRENT_USER || null,
+  sellerShift: null,
 };
 
 const VIEW_TITLES = {
@@ -31,7 +35,27 @@ const VIEW_TITLES = {
   history: "History",
   sales: "Sales Reports",
   admin: "Administration",
+  reconcile: "My Shift",
 };
+
+function isSeller() {
+  return state.currentUser?.role === "seller";
+}
+
+function canAccessView(viewId) {
+  if (!isSeller()) return true;
+  return viewId === "sell" || viewId === "reconcile";
+}
+
+const ROLE_LABELS = {
+  admin: "Administrator",
+  stock_manager: "Stock Manager",
+  seller: "Seller",
+};
+
+function hasOpenShift() {
+  return !!state.sellerShift?.has_open_shift;
+}
 
 const fmt = new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 });
 const fmtNum = new Intl.NumberFormat("en-RW");
@@ -52,6 +76,10 @@ function categoryStockTypeLabel(usesCupStock) {
 
 function paymentMethodLabel(method) {
   return PAYMENT_LABELS[method] || method || "—";
+}
+
+function sellerLabel(transaction) {
+  return esc(transaction.seller_name || "—");
 }
 
 function clearPaymentMethod() {
@@ -196,6 +224,8 @@ function closeMobileNav() {
 }
 
 function switchView(viewId) {
+  if (!canAccessView(viewId)) return;
+
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
   document.querySelectorAll(".bottom-nav-item[data-view]").forEach((n) => n.classList.remove("active"));
@@ -213,9 +243,16 @@ function switchView(viewId) {
   if (viewId === "products") loadProducts();
   if (viewId === "sell") loadSellView();
   if (viewId === "restock") loadRestockView();
-  if (viewId === "history") loadHistory();
-  if (viewId === "sales") loadSalesReports();
+  if (viewId === "history") {
+    loadSellers();
+    loadHistory();
+  }
+  if (viewId === "sales") {
+    loadSellers();
+    loadSalesReports();
+  }
   if (viewId === "admin") loadAdminView();
+  if (viewId === "reconcile") loadReconcileView();
 }
 
 function switchAdminTab(tabId) {
@@ -653,6 +690,9 @@ async function confirmDelete() {
 
 async function loadSellView() {
   try {
+    if (isSeller()) {
+      await refreshSellerShift();
+    }
     const [products, cups] = await Promise.all([
       api("/api/products"),
       api("/api/cups"),
@@ -664,9 +704,23 @@ async function loadSellView() {
     syncCartWithStock();
     updateSellPreview();
     renderCart();
+    updateSellShiftUi();
   } catch (e) {
     toast(e.message, "error");
   }
+}
+
+function updateSellShiftUi() {
+  if (!isSeller()) return;
+
+  const banner = document.getElementById("sell-shift-banner");
+  const layout = document.getElementById("sell-layout");
+  const checkoutBtn = document.getElementById("btn-complete-sale");
+  const open = hasOpenShift();
+
+  if (banner) banner.hidden = open;
+  if (layout) layout.classList.toggle("sell-locked", !open);
+  if (checkoutBtn) checkoutBtn.disabled = !open;
 }
 
 function togglePosMode() {
@@ -971,6 +1025,12 @@ function submitAddToCart(e) {
 }
 
 async function completeCheckout() {
+  if (isSeller() && !hasOpenShift()) {
+    toast("Start your shift before selling.", "error");
+    switchView("reconcile");
+    return;
+  }
+
   if (!state.cart.length) {
     toast("Cart is empty", "error");
     return;
@@ -1018,7 +1078,7 @@ async function completeCheckout() {
 
     clearCart();
     await loadSellView();
-    loadDashboard();
+    if (!isSeller()) loadDashboard();
   } catch (err) {
     toast(err.message, "error");
     await loadSellView();
@@ -1030,6 +1090,177 @@ async function completeCheckout() {
 function quickSell(id) {
   switchView("sell");
   setTimeout(() => addToCart(id, 1), 100);
+}
+
+// ── Seller shift management ─────────────────────────────────────────────────
+
+async function refreshSellerShift() {
+  if (!isSeller()) return null;
+  state.sellerShift = await api("/api/seller/shift");
+  return state.sellerShift;
+}
+
+function reconcileStatusLabel(status) {
+  if (status === "balanced") return { text: "Balanced", cls: "status-pill-ok" };
+  if (status === "over") return { text: "Over", cls: "status-pill-warn" };
+  return { text: "Short", cls: "status-pill-warn" };
+}
+
+function formatShiftRange(shift) {
+  const opened = formatDate(shift.opened_at);
+  if (!shift.closed_at) return `Started ${opened}`;
+  return `${opened} → ${formatDate(shift.closed_at)}`;
+}
+
+function renderShiftSummary(shift, message) {
+  const resultEl = document.getElementById("reconcile-result");
+  if (!resultEl || !shift) return;
+
+  const status = reconcileStatusLabel(shift.status_label || "balanced");
+  const varianceAbs = fmt.format(Math.abs(shift.variance || 0));
+  const varianceLine =
+    shift.status_label === "balanced"
+      ? "Your cash matches opening float plus cash sales for this shift."
+      : shift.status_label === "over"
+        ? `You have ${varianceAbs} more cash than expected for this shift.`
+        : `You are short by ${varianceAbs} for this shift.`;
+
+  resultEl.innerHTML = `
+    <div class="reconcile-summary">
+      <div class="reconcile-status">
+        <span class="status-pill ${status.cls}">${status.text}</span>
+        <p class="reconcile-message">${esc(message || varianceLine)}</p>
+        <p class="text-muted shift-range-label">${esc(formatShiftRange(shift))}</p>
+      </div>
+      <div class="reconcile-grid">
+        ${statCard("revenue", UI_ICONS.revenue, "Total Sold", fmt.format(shift.total_sales), `${fmtNum.format(shift.units_sold)} units · ${shift.sale_count} lines`)}
+        ${statCard("sales", UI_ICONS.sales, "Expected Cash", fmt.format(shift.expected_cash), `Float ${fmt.format(shift.opening_float)} + cash sales ${fmt.format(shift.cash_sales)}`)}
+        ${statCard("month", UI_ICONS.chart, "Cash Counted", fmt.format(shift.counted_cash), varianceLine)}
+      </div>
+      <div class="reconcile-payments card card-flat">
+        <h4>Payment breakdown</h4>
+        <div class="preview-row"><span>Cash</span><strong>${fmt.format(shift.cash_sales)}</strong></div>
+        <div class="preview-row"><span>MoMo</span><strong>${fmt.format(shift.momo_sales)}</strong></div>
+        <div class="preview-row"><span>Visa</span><strong>${fmt.format(shift.visa_sales)}</strong></div>
+      </div>
+      <p class="text-muted reconcile-closed-note">Shift closed. Start a new shift when you are ready to sell again.</p>
+    </div>
+  `;
+}
+
+function renderShiftView() {
+  const startCard = document.getElementById("shift-start-card");
+  const openCard = document.getElementById("shift-open-card");
+  const closeCard = document.getElementById("shift-close-card");
+  const resultCard = document.getElementById("shift-result-card");
+  const openedLabel = document.getElementById("shift-opened-label");
+  const closeLabel = document.getElementById("shift-close-label");
+  const cashInput = document.getElementById("reconcile-cash-amount");
+
+  const data = state.sellerShift;
+  const open = data?.has_open_shift;
+  const closedShift = !open && (data?.shift?.status === "closed" ? data.shift : data?.last_closed);
+
+  if (startCard) startCard.hidden = open || !!closedShift;
+  if (openCard) openCard.hidden = !open;
+  if (closeCard) closeCard.hidden = !open;
+  if (resultCard) resultCard.hidden = !closedShift;
+
+  if (open && data.shift) {
+    if (openedLabel) {
+      openedLabel.textContent = `Started ${formatDate(data.shift.opened_at)} · Opening float ${fmt.format(data.shift.opening_float)}`;
+    }
+    if (closeLabel) {
+      closeLabel.textContent = formatDate(data.shift.opened_at);
+    }
+    if (cashInput) cashInput.value = "";
+  }
+
+  if (closedShift && resultCard) {
+    renderShiftSummary(closedShift);
+  }
+}
+
+async function loadReconcileView() {
+  if (!isSeller()) return;
+
+  try {
+    await refreshSellerShift();
+    renderShiftView();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+async function submitStartShift(e) {
+  e.preventDefault();
+  if (!isSeller()) return;
+
+  const btn = document.getElementById("btn-start-shift");
+  const openingFloat = parseFloat(document.getElementById("shift-opening-float")?.value || "0");
+
+  if (Number.isNaN(openingFloat) || openingFloat < 0) {
+    toast("Enter a valid opening float", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const data = await api("/api/seller/shift/start", {
+      method: "POST",
+      body: JSON.stringify({ opening_float: openingFloat }),
+    });
+    state.sellerShift = data;
+    toast(data.message || "Shift started");
+    renderShiftView();
+    updateSellShiftUi();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitCloseShift(e) {
+  e.preventDefault();
+  if (!isSeller()) return;
+
+  const input = document.getElementById("reconcile-cash-amount");
+  const btn = document.getElementById("btn-reconcile");
+  const countedCash = parseFloat(input?.value);
+
+  if (Number.isNaN(countedCash) || countedCash < 0) {
+    toast("Enter a valid cash amount", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  try {
+    const data = await api("/api/seller/shift/close", {
+      method: "POST",
+      body: JSON.stringify({ counted_cash: countedCash }),
+    });
+    state.sellerShift = {
+      has_open_shift: false,
+      shift: data.shift,
+      last_closed: data.shift,
+    };
+    renderShiftView();
+    updateSellShiftUi();
+    toast(data.message, data.shift.status_label === "balanced" ? "success" : "error");
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function showStartShiftForm() {
+  state.sellerShift = { has_open_shift: false };
+  const resultCard = document.getElementById("shift-result-card");
+  if (resultCard) resultCard.hidden = true;
+  renderShiftView();
+  document.getElementById("shift-opening-float")?.focus();
 }
 
 // ── Restock ────────────────────────────────────────────────────────────────
@@ -1277,12 +1508,41 @@ document.querySelectorAll(".qty-preset").forEach((btn) => {
 
 // ── History ────────────────────────────────────────────────────────────────
 
+async function loadSellers() {
+  try {
+    state.sellers = await api("/api/sellers");
+    populateSellerFilter("history-seller-filter", state.historySellerId);
+    populateSellerFilter("sales-seller-filter", state.salesSellerId);
+  } catch {
+    // Seller filters are optional if the request fails.
+  }
+}
+
+function populateSellerFilter(selectId, selected = "") {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const current = selected || sel.value;
+  sel.innerHTML =
+    `<option value="">All Sellers</option>` +
+    state.sellers
+      .map(
+        (s) =>
+          `<option value="${s.id}"${String(s.id) === String(current) ? " selected" : ""}>${esc(s.display_name)}</option>`
+      )
+      .join("");
+}
+
 async function loadHistory() {
   const type = document.getElementById("history-type-filter").value;
-  const params = type ? `?type=${type}&limit=100` : "?limit=100";
+  const sellerId = document.getElementById("history-seller-filter")?.value || "";
+  state.historySellerId = sellerId;
+
+  const params = new URLSearchParams({ limit: "100" });
+  if (type) params.set("type", type);
+  if (sellerId) params.set("user_id", sellerId);
 
   try {
-    const transactions = await api(`/api/transactions${params}`);
+    const transactions = await api(`/api/transactions?${params}`);
     renderHistory(transactions);
   } catch (e) {
     toast(e.message, "error");
@@ -1292,7 +1552,7 @@ async function loadHistory() {
 function renderHistory(transactions) {
   const tbody = document.getElementById("history-table-body");
   if (!transactions.length) {
-    tbody.innerHTML = `<tr><td colspan="7">${emptyState(UI_ICONS.clock, "No transactions", "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8">${emptyState(UI_ICONS.clock, "No transactions", "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
     return;
   }
 
@@ -1308,6 +1568,7 @@ function renderHistory(transactions) {
       <td>${formatTransactionQty(t)}</td>
       <td>${t.type === "sale" ? fmt.format(t.total_amount) : "—"}</td>
       <td>${t.type === "sale" ? paymentMethodLabel(t.payment_method) : "—"}</td>
+      <td>${t.type === "sale" ? sellerLabel(t) : "—"}</td>
       <td style="color:var(--text-muted);font-size:0.82rem">${esc(t.notes || "—")}</td>
     </tr>`
     )
@@ -1348,6 +1609,9 @@ function initSalesReports() {
 
 async function loadSalesReports(from, to) {
   try {
+    const sellerId = document.getElementById("sales-seller-filter")?.value || "";
+    state.salesSellerId = sellerId;
+
     let url = "/api/sales/report?";
     if (state.salesPreset === "custom" && from && to) {
       url += `from=${from}&to=${to}`;
@@ -1356,6 +1620,7 @@ async function loadSalesReports(from, to) {
     } else {
       return;
     }
+    if (sellerId) url += `&user_id=${encodeURIComponent(sellerId)}`;
 
     state.salesReport = await api(url);
     state.salesFrom = state.salesReport.from;
@@ -1445,7 +1710,7 @@ function renderSalesDetail(sales, date, from, to) {
   }
 
   if (!sales.length) {
-    tbody.innerHTML = `<tr><td colspan="5">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
     return;
   }
 
@@ -1460,6 +1725,7 @@ function renderSalesDetail(sales, date, from, to) {
       <td>${s.quantity}</td>
       <td><strong>${fmt.format(s.total_amount)}</strong></td>
       <td>${paymentMethodLabel(s.payment_method)}</td>
+      <td>${sellerLabel(s)}</td>
     </tr>`
     )
     .join("");
@@ -1499,7 +1765,7 @@ function renderUsersTable(users) {
   tbody.innerHTML = users
     .map((u) => {
       const isSelf = state.currentUser && u.id === state.currentUser.id;
-      const roleLabel = u.role === "admin" ? "Administrator" : "Stock Manager";
+      const roleLabel = ROLE_LABELS[u.role] || u.role;
       const statusClass = u.is_active ? "ok" : "out";
       const statusLabel = u.is_active ? "Active" : "Inactive";
 
@@ -1536,7 +1802,7 @@ function openAddUser() {
   document.getElementById("user-password").required = true;
   document.getElementById("user-password-group").hidden = false;
   document.getElementById("user-active-group").hidden = true;
-  document.getElementById("user-role").value = "stock_manager";
+  document.getElementById("user-role").value = "seller";
   showModal("user-modal");
 }
 
@@ -1819,7 +2085,15 @@ document.addEventListener("DOMContentLoaded", () => {
   initSalesReports();
   initPosShortcuts();
 
-  loadCategories().then(() => loadDashboard());
+  if (isSeller()) {
+    loadCategories().then(() => {
+      refreshSellerShift().then(() => {
+        loadSellView();
+      });
+    });
+  } else {
+    loadCategories().then(() => loadDashboard());
+  }
 
   document.getElementById("btn-quick-add-product")?.addEventListener("click", () => {
     switchView("products");
@@ -1875,11 +2149,20 @@ document.addEventListener("DOMContentLoaded", () => {
   initPaymentMethods();
   document.getElementById("btn-complete-sale").addEventListener("click", completeCheckout);
   document.getElementById("btn-clear-cart").addEventListener("click", clearCart);
+  document.getElementById("shift-start-form")?.addEventListener("submit", submitStartShift);
+  document.getElementById("shift-close-form")?.addEventListener("submit", submitCloseShift);
+  document.getElementById("btn-new-shift")?.addEventListener("click", showStartShiftForm);
 
   document.getElementById("restock-form").addEventListener("submit", submitRestock);
   document.getElementById("adjust-form").addEventListener("submit", submitAdjust);
 
   document.getElementById("history-type-filter").addEventListener("change", loadHistory);
+  document.getElementById("history-seller-filter")?.addEventListener("change", loadHistory);
+  document.getElementById("sales-seller-filter")?.addEventListener("change", () => {
+    const from = document.getElementById("sales-from")?.value;
+    const to = document.getElementById("sales-to")?.value;
+    loadSalesReports(from, to);
+  });
 
   document.querySelectorAll("#history-filter-chips .filter-chip").forEach((chip) => {
     chip.addEventListener("click", () => {

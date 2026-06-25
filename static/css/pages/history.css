@@ -21,6 +21,10 @@
   flex: 1;
 }
 
+#history-seller-filter {
+  min-width: 180px;
+}
+
 #view-history .table-wrap {
   transition: box-shadow var(--transition);
 }

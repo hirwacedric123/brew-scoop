@@ -10,6 +10,7 @@ from flask import Flask, jsonify, redirect, render_template, request, g, url_for
 from werkzeug.security import generate_password_hash
 
 from auth import (
+    ROLES,
     admin_required,
     get_current_user,
     get_user_by_username,
@@ -19,6 +20,7 @@ from auth import (
     login_user,
     logout_user,
     public_user,
+    role_required,
     row_to_user,
     validate_user_payload,
     verify_password,
@@ -158,6 +160,100 @@ def _migrate_db(db):
             "INSERT INTO cup_inventory (id, quantity, reorder_level, updated_at) VALUES (1, 0, 20, ?)",
             (now_iso(),),
         )
+
+    tx_cols = {row[1] for row in db.execute("PRAGMA table_info(transactions)").fetchall()}
+    if "user_id" not in tx_cols:
+        db.execute("ALTER TABLE transactions ADD COLUMN user_id INTEGER REFERENCES users(id)")
+
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS seller_shifts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
+            opened_at TEXT NOT NULL,
+            closed_at TEXT,
+            opening_float REAL NOT NULL DEFAULT 0,
+            counted_cash REAL,
+            expected_cash REAL,
+            variance REAL,
+            total_sales REAL,
+            cash_sales REAL,
+            momo_sales REAL,
+            visa_sales REAL,
+            units_sold INTEGER,
+            sale_count INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_seller_shifts_user_status
+            ON seller_shifts(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_seller_shifts_user_opened
+            ON seller_shifts(user_id, opened_at);
+        """
+    )
+
+    if "shift_id" not in tx_cols:
+        db.execute(
+            "ALTER TABLE transactions ADD COLUMN shift_id INTEGER REFERENCES seller_shifts(id)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_transactions_shift ON transactions(shift_id)"
+        )
+
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS seller_reconciliations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            sale_date TEXT NOT NULL,
+            counted_cash REAL NOT NULL,
+            expected_cash REAL NOT NULL,
+            variance REAL NOT NULL,
+            total_sales REAL NOT NULL,
+            cash_sales REAL NOT NULL,
+            momo_sales REAL NOT NULL,
+            visa_sales REAL NOT NULL,
+            units_sold INTEGER NOT NULL,
+            sale_count INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, sale_date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_seller_recon_user_date
+            ON seller_reconciliations(user_id, sale_date);
+        """
+    )
+
+    _migrate_users_role_check(db)
+
+
+def _migrate_users_role_check(db):
+    sql_row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if not sql_row or "seller" in (sql_row[0] or ""):
+        return
+    db.executescript(
+        """
+        CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'stock_manager', 'seller')),
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO users_new SELECT * FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+        """
+    )
 
 
 def _init_categories_table(db):
@@ -343,6 +439,9 @@ def _stock_status(quantity, reorder_level):
 
 
 def row_to_transaction(row):
+    seller_name = ""
+    if "seller_name" in row.keys() and row["seller_name"]:
+        seller_name = row["seller_name"]
     return {
         "id": row["id"],
         "product_id": row["product_id"],
@@ -355,21 +454,41 @@ def row_to_transaction(row):
         "notes": row["notes"] or "",
         "checkout_ref": row["checkout_ref"] or "",
         "payment_method": row["payment_method"] or "",
+        "user_id": row["user_id"] if row["user_id"] else None,
+        "seller_name": seller_name,
         "created_at": row["created_at"],
         "sale_date": row["created_at"][:10],
     }
 
 
-def _sales_summary(db, date_from, date_to):
+def _parse_user_id_filter(user_id):
+    if not user_id:
+        return None
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sale_user_clause(user_id, alias=""):
+    uid = _parse_user_id_filter(user_id)
+    if uid is None:
+        return "", []
+    prefix = f"{alias}." if alias else ""
+    return f" AND {prefix}user_id = ?", [uid]
+
+
+def _sales_summary(db, date_from, date_to, user_id=None):
+    user_clause, user_params = _sale_user_clause(user_id)
     row = db.execute(
-        """SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units,
                   COUNT(*) AS transactions
            FROM transactions
            WHERE type = 'sale'
              AND substr(created_at, 1, 10) >= ?
-             AND substr(created_at, 1, 10) <= ?""",
-        (date_from, date_to),
+             AND substr(created_at, 1, 10) <= ?{user_clause}""",
+        (date_from, date_to, *user_params),
     ).fetchone()
     return {
         "revenue": round(row["revenue"], 2),
@@ -378,19 +497,20 @@ def _sales_summary(db, date_from, date_to):
     }
 
 
-def _daily_sales_breakdown(db, date_from, date_to):
+def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
+    user_clause, user_params = _sale_user_clause(user_id)
     rows = db.execute(
-        """SELECT substr(created_at, 1, 10) AS sale_date,
+        f"""SELECT substr(created_at, 1, 10) AS sale_date,
                   COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units,
                   COUNT(*) AS transactions
            FROM transactions
            WHERE type = 'sale'
              AND substr(created_at, 1, 10) >= ?
-             AND substr(created_at, 1, 10) <= ?
+             AND substr(created_at, 1, 10) <= ?{user_clause}
            GROUP BY sale_date
            ORDER BY sale_date DESC""",
-        (date_from, date_to),
+        (date_from, date_to, *user_params),
     ).fetchall()
     return [
         {
@@ -403,18 +523,19 @@ def _daily_sales_breakdown(db, date_from, date_to):
     ]
 
 
-def _payment_breakdown(db, date_from, date_to):
+def _payment_breakdown(db, date_from, date_to, user_id=None):
+    user_clause, user_params = _sale_user_clause(user_id)
     rows = db.execute(
-        """SELECT payment_method,
+        f"""SELECT payment_method,
                   COALESCE(SUM(total_amount), 0) AS revenue,
                   COUNT(DISTINCT checkout_ref) AS checkouts
            FROM transactions
            WHERE type = 'sale'
              AND payment_method IS NOT NULL
              AND substr(created_at, 1, 10) >= ?
-             AND substr(created_at, 1, 10) <= ?
+             AND substr(created_at, 1, 10) <= ?{user_clause}
            GROUP BY payment_method""",
-        (date_from, date_to),
+        (date_from, date_to, *user_params),
     ).fetchall()
     totals = {row["payment_method"]: row for row in rows}
     return [
@@ -542,7 +663,7 @@ def admin_update_user(user_id):
 
     if "role" in data:
         role = data["role"]
-        if role not in ("admin", "stock_manager"):
+        if role not in ROLES:
             return jsonify({"error": "Invalid role"}), 400
         if current["id"] == user_id and role != "admin":
             return jsonify({"error": "You cannot remove your own admin role"}), 400
@@ -630,7 +751,7 @@ def get_product(product_id):
 
 
 @app.route("/api/products", methods=["POST"])
-@login_required
+@role_required("admin", "stock_manager")
 def create_product():
     data = request.get_json(silent=True) or {}
     error = _validate_product(data)
@@ -678,7 +799,7 @@ def create_product():
 
 
 @app.route("/api/products/<int:product_id>", methods=["PUT"])
-@login_required
+@role_required("admin", "stock_manager")
 def update_product(product_id):
     db = get_db()
     row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
@@ -744,7 +865,7 @@ def update_product(product_id):
 
 
 @app.route("/api/products/<int:product_id>", methods=["DELETE"])
-@login_required
+@role_required("admin", "stock_manager")
 def delete_product(product_id):
     db = get_db()
     row = db.execute("SELECT id FROM products WHERE id = ?", (product_id,)).fetchone()
@@ -804,7 +925,7 @@ def _normalize_checkout_items(raw_items):
     return [{"product_id": pid, "quantity": qty} for pid, qty in merged.items()], None
 
 
-def _execute_checkout(db, items, notes=None, payment_method=None):
+def _execute_checkout(db, items, notes=None, payment_method=None, user_id=None, shift_id=None):
     method = (payment_method or "").strip().lower()
     if method not in PAYMENT_METHODS:
         return None, "Select a payment method: MoMo, Cash, or Visa", 400
@@ -877,8 +998,8 @@ def _execute_checkout(db, items, notes=None, payment_method=None):
             cur = db.execute(
                 """INSERT INTO transactions
                    (product_id, type, quantity, unit_price, total_amount,
-                    notes, created_at, checkout_ref, payment_method)
-                   VALUES (?, 'sale', ?, ?, ?, ?, ?, ?, ?)""",
+                    notes, created_at, checkout_ref, payment_method, user_id, shift_id)
+                   VALUES (?, 'sale', ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     product_id,
                     quantity,
@@ -888,6 +1009,8 @@ def _execute_checkout(db, items, notes=None, payment_method=None):
                     ts,
                     checkout_ref,
                     method,
+                    user_id,
+                    shift_id,
                 ),
             )
 
@@ -958,8 +1081,15 @@ def create_sale():
         return jsonify({"error": error}), 400
 
     db = get_db()
+    user = get_current_user(db)
+    shift_id = None
+    if user["role"] == "seller":
+        shift = get_open_seller_shift(db, user["id"])
+        if not shift:
+            return jsonify({"error": "Start your shift before selling."}), 400
+        shift_id = shift["id"]
     result, error, status = _execute_checkout(
-        db, items, data.get("notes"), data.get("payment_method")
+        db, items, data.get("notes"), data.get("payment_method"), user["id"], shift_id
     )
     if error:
         return jsonify({"error": error}), status
@@ -987,16 +1117,228 @@ def checkout_sale():
         return jsonify({"error": error}), 400
 
     db = get_db()
+    user = get_current_user(db)
+    shift_id = None
+    if user["role"] == "seller":
+        shift = get_open_seller_shift(db, user["id"])
+        if not shift:
+            return jsonify({"error": "Start your shift before selling."}), 400
+        shift_id = shift["id"]
     result, error, status = _execute_checkout(
-        db, items, data.get("notes"), data.get("payment_method")
+        db, items, data.get("notes"), data.get("payment_method"), user["id"], shift_id
     )
     if error:
         return jsonify({"error": error}), status
     return jsonify(result), status
 
 
+def get_open_seller_shift(db, user_id):
+    return db.execute(
+        """SELECT * FROM seller_shifts
+           WHERE user_id = ? AND status = 'open'
+           ORDER BY opened_at DESC
+           LIMIT 1""",
+        (user_id,),
+    ).fetchone()
+
+
+def _seller_sales_for_shift(db, shift_id):
+    row = db.execute(
+        """SELECT
+               COALESCE(SUM(total_amount), 0) AS total_sales,
+               COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0) AS cash_sales,
+               COALESCE(SUM(CASE WHEN payment_method = 'momo' THEN total_amount ELSE 0 END), 0) AS momo_sales,
+               COALESCE(SUM(CASE WHEN payment_method = 'visa' THEN total_amount ELSE 0 END), 0) AS visa_sales,
+               COALESCE(SUM(quantity), 0) AS units_sold,
+               COUNT(*) AS sale_count
+           FROM transactions
+           WHERE type = 'sale' AND shift_id = ?""",
+        (shift_id,),
+    ).fetchone()
+    return {
+        "total_sales": round(row["total_sales"], 2),
+        "cash_sales": round(row["cash_sales"], 2),
+        "momo_sales": round(row["momo_sales"], 2),
+        "visa_sales": round(row["visa_sales"], 2),
+        "units_sold": row["units_sold"],
+        "sale_count": row["sale_count"],
+    }
+
+
+def _row_to_shift(row, include_close=False):
+    data = {
+        "id": row["id"],
+        "status": row["status"],
+        "opened_at": row["opened_at"],
+        "opening_float": round(row["opening_float"], 2),
+    }
+    if include_close or row["status"] == "closed":
+        data.update({
+            "closed_at": row["closed_at"],
+            "counted_cash": round(row["counted_cash"] or 0, 2),
+            "expected_cash": round(row["expected_cash"] or 0, 2),
+            "variance": round(row["variance"] or 0, 2),
+            "total_sales": round(row["total_sales"] or 0, 2),
+            "cash_sales": round(row["cash_sales"] or 0, 2),
+            "momo_sales": round(row["momo_sales"] or 0, 2),
+            "visa_sales": round(row["visa_sales"] or 0, 2),
+            "units_sold": row["units_sold"] or 0,
+            "sale_count": row["sale_count"] or 0,
+            "status_label": _shift_variance_status(row["variance"] or 0),
+        })
+    return data
+
+
+def _shift_variance_status(variance):
+    if variance == 0:
+        return "balanced"
+    if variance > 0:
+        return "over"
+    return "short"
+
+
+def fmt_rwf(amount):
+    return f"RWF {amount:,.0f}"
+
+
+def _shift_close_message(variance):
+    if variance == 0:
+        return "Cash matches your shift."
+    if variance > 0:
+        return f"You are over by {fmt_rwf(abs(variance))}."
+    return f"You are short by {fmt_rwf(abs(variance))}."
+
+
+@app.route("/api/seller/shift", methods=["GET"])
+@role_required("seller")
+def seller_shift_status():
+    db = get_db()
+    user = get_current_user(db)
+    open_shift = get_open_seller_shift(db, user["id"])
+    if open_shift:
+        return jsonify({
+            "has_open_shift": True,
+            "shift": _row_to_shift(open_shift),
+        })
+
+    last_closed = db.execute(
+        """SELECT * FROM seller_shifts
+           WHERE user_id = ? AND status = 'closed'
+           ORDER BY closed_at DESC
+           LIMIT 1""",
+        (user["id"],),
+    ).fetchone()
+
+    payload = {"has_open_shift": False}
+    if last_closed:
+        payload["last_closed"] = _row_to_shift(last_closed, include_close=True)
+    return jsonify(payload)
+
+
+@app.route("/api/seller/shift/start", methods=["POST"])
+@role_required("seller")
+def seller_shift_start():
+    data = request.get_json(silent=True) or {}
+    opening_float = 0.0
+    if "opening_float" in data and data.get("opening_float") not in (None, ""):
+        try:
+            opening_float = round(float(data.get("opening_float")), 2)
+            if opening_float < 0:
+                return jsonify({"error": "Opening float cannot be negative"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "Enter a valid opening float amount"}), 400
+
+    db = get_db()
+    user = get_current_user(db)
+    if get_open_seller_shift(db, user["id"]):
+        return jsonify({"error": "You already have an open shift."}), 409
+
+    ts = now_iso()
+    cur = db.execute(
+        """INSERT INTO seller_shifts
+           (user_id, status, opened_at, opening_float)
+           VALUES (?, 'open', ?, ?)""",
+        (user["id"], ts, opening_float),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM seller_shifts WHERE id = ?",
+        (cur.lastrowid,),
+    ).fetchone()
+    return jsonify({
+        "has_open_shift": True,
+        "shift": _row_to_shift(row),
+        "message": "Shift started. You can sell now.",
+    }), 201
+
+
+@app.route("/api/seller/shift/close", methods=["POST"])
+@role_required("seller")
+def seller_shift_close():
+    data = request.get_json(silent=True) or {}
+    try:
+        counted_cash = round(float(data.get("counted_cash")), 2)
+        if counted_cash < 0:
+            return jsonify({"error": "Cash amount cannot be negative"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "Enter a valid cash amount"}), 400
+
+    db = get_db()
+    user = get_current_user(db)
+    shift = get_open_seller_shift(db, user["id"])
+    if not shift:
+        return jsonify({"error": "No open shift to close. Start a shift first."}), 400
+
+    sales = _seller_sales_for_shift(db, shift["id"])
+    opening_float = round(shift["opening_float"], 2)
+    expected_cash = round(opening_float + sales["cash_sales"], 2)
+    variance = round(counted_cash - expected_cash, 2)
+    ts = now_iso()
+
+    db.execute(
+        """UPDATE seller_shifts SET
+           status = 'closed',
+           closed_at = ?,
+           counted_cash = ?,
+           expected_cash = ?,
+           variance = ?,
+           total_sales = ?,
+           cash_sales = ?,
+           momo_sales = ?,
+           visa_sales = ?,
+           units_sold = ?,
+           sale_count = ?
+           WHERE id = ?""",
+        (
+            ts,
+            counted_cash,
+            expected_cash,
+            variance,
+            sales["total_sales"],
+            sales["cash_sales"],
+            sales["momo_sales"],
+            sales["visa_sales"],
+            sales["units_sold"],
+            sales["sale_count"],
+            shift["id"],
+        ),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM seller_shifts WHERE id = ?",
+        (shift["id"],),
+    ).fetchone()
+    closed = _row_to_shift(row, include_close=True)
+    message = _shift_close_message(variance)
+    return jsonify({
+        "has_open_shift": False,
+        "shift": closed,
+        "message": message,
+    })
+
+
 @app.route("/api/restock", methods=["POST"])
-@login_required
+@role_required("admin", "stock_manager")
 def restock_product():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -1040,7 +1382,7 @@ def restock_product():
 
 
 @app.route("/api/adjust", methods=["POST"])
-@login_required
+@role_required("admin", "stock_manager")
 def adjust_stock():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -1125,7 +1467,7 @@ def restock_cups():
 
 
 @app.route("/api/cups/adjust", methods=["POST"])
-@login_required
+@role_required("admin", "stock_manager")
 def adjust_cups():
     data = request.get_json(silent=True) or {}
     try:
@@ -1158,18 +1500,21 @@ def adjust_cups():
 # ── Transactions & Dashboard API ─────────────────────────────────────────────
 
 @app.route("/api/transactions", methods=["GET"])
-@login_required
+@role_required("admin", "stock_manager")
 def list_transactions():
     db = get_db()
     limit = min(int(request.args.get("limit", 50)), 500)
     tx_type = request.args.get("type", "").strip()
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
+    user_id = request.args.get("user_id", "").strip()
 
     query = """
-        SELECT t.*, p.name AS product_name, p.category
+        SELECT t.*, p.name AS product_name, p.category,
+               u.display_name AS seller_name
         FROM transactions t
         JOIN products p ON p.id = t.product_id
+        LEFT JOIN users u ON u.id = t.user_id
         WHERE 1=1
     """
     params = []
@@ -1182,6 +1527,9 @@ def list_transactions():
     if date_to:
         query += " AND substr(t.created_at, 1, 10) <= ?"
         params.append(date_to)
+    user_clause, user_params = _sale_user_clause(user_id, "t")
+    query += user_clause
+    params.extend(user_params)
     query += " ORDER BY t.created_at DESC LIMIT ?"
     params.append(limit)
 
@@ -1189,8 +1537,27 @@ def list_transactions():
     return jsonify([row_to_transaction(r) for r in rows])
 
 
+@app.route("/api/sellers", methods=["GET"])
+@role_required("admin", "stock_manager")
+def list_sellers():
+    rows = get_db().execute(
+        """SELECT id, display_name, username
+           FROM users
+           WHERE is_active = 1
+           ORDER BY display_name COLLATE NOCASE ASC, username COLLATE NOCASE ASC"""
+    ).fetchall()
+    return jsonify([
+        {
+            "id": r["id"],
+            "display_name": r["display_name"],
+            "username": r["username"],
+        }
+        for r in rows
+    ])
+
+
 @app.route("/api/sales/dates", methods=["GET"])
-@login_required
+@role_required("admin", "stock_manager")
 def sales_dates():
     db = get_db()
     rows = db.execute(
@@ -1215,11 +1582,12 @@ def sales_dates():
 
 
 @app.route("/api/sales/report", methods=["GET"])
-@login_required
+@role_required("admin", "stock_manager")
 def sales_report():
     preset = request.args.get("preset", "").strip()
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
+    user_id = request.args.get("user_id", "").strip()
 
     if preset == "today":
         date_from = date_to = today_kigali()
@@ -1236,25 +1604,29 @@ def sales_report():
         return jsonify({"error": "Invalid date range"}), 400
 
     db = get_db()
+    user_clause, user_params = _sale_user_clause(user_id, "t")
     sales_rows = db.execute(
-        """SELECT t.*, p.name AS product_name, p.category
+        f"""SELECT t.*, p.name AS product_name, p.category,
+                   u.display_name AS seller_name
            FROM transactions t
            JOIN products p ON p.id = t.product_id
+           LEFT JOIN users u ON u.id = t.user_id
            WHERE t.type = 'sale'
              AND substr(t.created_at, 1, 10) >= ?
-             AND substr(t.created_at, 1, 10) <= ?
+             AND substr(t.created_at, 1, 10) <= ?{user_clause}
            ORDER BY t.created_at DESC""",
-        (date_from, date_to),
+        (date_from, date_to, *user_params),
     ).fetchall()
 
-    summary = _sales_summary(db, date_from, date_to)
-    daily = _daily_sales_breakdown(db, date_from, date_to)
-    payments = _payment_breakdown(db, date_from, date_to)
+    summary = _sales_summary(db, date_from, date_to, user_id)
+    daily = _daily_sales_breakdown(db, date_from, date_to, user_id)
+    payments = _payment_breakdown(db, date_from, date_to, user_id)
 
     return jsonify({
         "from": date_from,
         "to": date_to,
         "preset": preset or "custom",
+        "user_id": _parse_user_id_filter(user_id),
         "summary": summary,
         "daily_breakdown": daily,
         "payment_breakdown": payments,
@@ -1263,7 +1635,7 @@ def sales_report():
 
 
 @app.route("/api/dashboard", methods=["GET"])
-@login_required
+@role_required("admin", "stock_manager")
 def dashboard_stats():
     db = get_db()
     category_cup_map = get_category_cup_map(db)
@@ -1352,9 +1724,11 @@ def dashboard_stats():
     ).fetchall()
 
     recent = db.execute(
-        """SELECT t.*, p.name AS product_name, p.category
+        """SELECT t.*, p.name AS product_name, p.category,
+                  u.display_name AS seller_name
            FROM transactions t
            JOIN products p ON p.id = t.product_id
+           LEFT JOIN users u ON u.id = t.user_id
            ORDER BY t.created_at DESC LIMIT 8"""
     ).fetchall()
 
