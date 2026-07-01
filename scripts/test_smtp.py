@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Test SMTP settings. Run on the server to see the real connection error.
+"""Test email settings. Run on the server to see the real connection error.
 
-  .venv/bin/python scripts/test_smtp.py
-  .venv/bin/python scripts/test_smtp.py --send you@example.com
+  python3.10 scripts/test_smtp.py
+  python3.10 scripts/test_smtp.py --send you@example.com
 """
 
 import argparse
@@ -18,11 +18,11 @@ from env_loader import load_env_file
 
 load_env_file(os.path.join(ROOT, ".env"))
 
-from mailer import load_smtp_config, send_email
+from mailer import load_mail_config, send_email
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test Brew & Scoop SMTP configuration.")
+    parser = argparse.ArgumentParser(description="Test Brew & Scoop email configuration.")
     parser.add_argument(
         "--send",
         metavar="EMAIL",
@@ -35,7 +35,7 @@ def main():
     print(f".env exists: {os.path.isfile(env_path)}")
 
     try:
-        config = load_smtp_config()
+        config = load_mail_config()
     except ValueError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         print(
@@ -45,8 +45,12 @@ def main():
         )
         return 1
 
-    safe = {**config, "password": "***"}
-    print("SMTP config:", safe)
+    safe = {**config}
+    if "password" in safe:
+        safe["password"] = "***"
+    if "api_key" in safe:
+        safe["api_key"] = "***"
+    print("Email config:", safe)
 
     if not args.send:
         print("\nConfig looks loaded. Run with --send your@email.com to test delivery.")
@@ -55,15 +59,15 @@ def main():
     try:
         send_email(
             [args.send],
-            "Brew & Scoop SMTP test",
-            "<p>If you received this, SMTP is working.</p>",
-            "If you received this, SMTP is working.",
+            "Brew & Scoop email test",
+            "<p>If you received this, email delivery is working.</p>",
+            "If you received this, email delivery is working.",
         )
     except OSError as exc:
         print(f"Connection error: {exc}", file=sys.stderr)
         print(
-            "\nPythonAnywhere often blocks Gmail SMTP (Network is unreachable). "
-            "Contact PythonAnywhere support or use an HTTPS email API (SendGrid, etc.).",
+            "\nPythonAnywhere web workers often cannot reach Gmail SMTP. "
+            "Set EMAIL_PROVIDER to brevo, resend, mailgun, or sendgrid in .env.",
             file=sys.stderr,
         )
         return 1
