@@ -2,8 +2,16 @@
 
 import os
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
 
 
 def _env_bool(name, default=True):
@@ -16,7 +24,7 @@ def _env_bool(name, default=True):
 def load_smtp_config():
     host = (os.environ.get("SMTP_HOST") or "").strip()
     user = (os.environ.get("SMTP_USER") or "").strip()
-    password = os.environ.get("SMTP_PASSWORD") or ""
+    password = (os.environ.get("SMTP_PASSWORD") or "").replace(" ", "")
     port_raw = (os.environ.get("SMTP_PORT") or "587").strip()
     from_email = (os.environ.get("SMTP_FROM") or user).strip()
 
@@ -34,14 +42,39 @@ def load_smtp_config():
     except ValueError as exc:
         raise ValueError("SMTP_PORT must be an integer") from exc
 
+    use_ssl = _env_bool("SMTP_USE_SSL", port == 465)
+    use_tls = _env_bool("SMTP_USE_TLS", not use_ssl)
+
     return {
         "host": host,
         "port": port,
         "user": user,
         "password": password,
         "from_email": from_email,
-        "use_tls": _env_bool("SMTP_USE_TLS", True),
+        "use_tls": use_tls,
+        "use_ssl": use_ssl,
     }
+
+
+def _smtp_send(config, message, recipients):
+    context = ssl.create_default_context()
+    timeout = 30
+
+    if config["use_ssl"]:
+        with smtplib.SMTP_SSL(
+            config["host"], config["port"], timeout=timeout, context=context
+        ) as smtp:
+            smtp.login(config["user"], config["password"])
+            smtp.sendmail(config["from_email"], recipients, message.as_string())
+        return
+
+    with smtplib.SMTP(config["host"], config["port"], timeout=timeout) as smtp:
+        smtp.ehlo()
+        if config["use_tls"]:
+            smtp.starttls(context=context)
+            smtp.ehlo()
+        smtp.login(config["user"], config["password"])
+        smtp.sendmail(config["from_email"], recipients, message.as_string())
 
 
 def send_email(to_addrs, subject, html_body, text_body=None):
@@ -60,10 +93,5 @@ def send_email(to_addrs, subject, html_body, text_body=None):
     message.attach(MIMEText(text_body, "plain", "utf-8"))
     message.attach(MIMEText(html_body, "html", "utf-8"))
 
-    with smtplib.SMTP(config["host"], config["port"], timeout=30) as smtp:
-        if config["use_tls"]:
-            smtp.starttls()
-        smtp.login(config["user"], config["password"])
-        smtp.sendmail(config["from_email"], recipients, message.as_string())
-
+    _smtp_send(config, message, recipients)
     return recipients
