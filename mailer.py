@@ -6,12 +6,9 @@ import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-try:
-    from dotenv import load_dotenv
+from env_loader import load_env_file
 
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-except ImportError:
-    pass
+load_env_file()
 
 
 def _env_bool(name, default=True):

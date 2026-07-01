@@ -6,12 +6,9 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
-try:
-    from dotenv import load_dotenv
+from env_loader import load_env_file
 
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
-except ImportError:
-    pass
+load_env_file()
 
 from flask import Flask, jsonify, redirect, render_template, request, g, url_for
 from werkzeug.security import generate_password_hash
