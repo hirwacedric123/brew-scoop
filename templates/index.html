@@ -47,6 +47,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>My Shift</span>
         </button>
+        <button class="nav-item seller-reports-nav" data-view="history" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>History</span>
+        </button>
+        <button class="nav-item seller-reports-nav" data-view="sales" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+          <span>Sales Reports</span>
+        </button>
         {% else %}
         <button class="nav-item" data-view="restock">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -407,6 +415,12 @@
               <span class="shift-hero-aside-label">Elapsed</span>
               <strong class="shift-hero-timer" id="shift-hero-timer">—</strong>
             </div>
+            <div class="shift-hero-actions" id="shift-hero-actions" hidden>
+              <button type="button" class="btn btn-primary btn-lg shift-hero-cta" data-view="sell" id="btn-hero-go-sell">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+                Go to sell
+              </button>
+            </div>
           </div>
 
           <div class="shift-steps-wrap">
@@ -435,6 +449,14 @@
             </ol>
           </div>
 
+          <div class="shift-sell-hint card" id="shift-sell-hint" hidden>
+            <p>Record sales on the Sell screen. Totals stay hidden until you close your shift.</p>
+            <button type="button" class="btn btn-ghost shift-link-cta" id="btn-show-close">
+              Done selling? Close shift
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+          </div>
+
           <div class="shift-panels" id="shift-panels">
             <div class="shift-panel shift-panel-start card shift-panel-accent-coffee" id="shift-start-card">
               <div class="shift-panel-header">
@@ -454,25 +476,11 @@
               </form>
             </div>
 
-            <div class="shift-panel shift-panel-active card shift-panel-accent-mint" id="shift-open-card" hidden>
-              <div class="shift-panel-header">
-                <div class="shift-panel-icon shift-panel-icon-active">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                </div>
-                <div>
-                  <h3>Shift active</h3>
-                  <p id="shift-opened-label">—</p>
-                </div>
-                <span class="shift-live-dot" title="Shift open"><span></span></span>
-              </div>
-              <div class="shift-active-meta" id="shift-active-meta"></div>
-              <button type="button" class="btn btn-primary btn-block shift-cta" data-view="sell">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-                Go to sell
-              </button>
-            </div>
-
             <div class="shift-panel shift-panel-close card shift-panel-accent-amber" id="shift-close-card" hidden>
+              <button type="button" class="btn btn-ghost btn-sm shift-back-link" id="btn-back-to-sell">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                Back to selling
+              </button>
               <div class="shift-panel-header">
                 <div class="shift-panel-icon shift-panel-icon-close">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -758,6 +766,35 @@
           </div>
         </header>
 
+        <div class="history-shifts-panel" id="history-shifts-panel" hidden>
+          <div class="history-shifts-head">
+            <h3>Your Shifts</h3>
+            <div class="history-shift-filters" id="history-shift-filters">
+              <button type="button" class="filter-chip active" data-history-shift-preset="today">Today</button>
+              <button type="button" class="filter-chip" data-history-shift-preset="week">This Week</button>
+              <button type="button" class="filter-chip" data-history-shift-preset="month">This Month</button>
+            </div>
+          </div>
+          <div class="history-shifts-layout">
+            <div class="card history-shifts-list-card">
+              <div class="card-body sales-dates-list" id="history-shifts-list"></div>
+            </div>
+            <div class="card history-shift-detail-card">
+              <div class="card-header">
+                <h3 id="history-shift-detail-title">Shift Detail</h3>
+                <span class="text-muted" id="history-shift-detail-subtitle"></span>
+              </div>
+              <div class="card-body" id="history-shift-detail-body">
+                <p class="text-muted shift-detail-placeholder">Select a shift to view details</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="history-transactions-head" id="history-transactions-head" hidden>
+          <h3>Sales transactions</h3>
+        </div>
+
         <div class="toolbar">
           <div class="filter-chips" id="history-filter-chips">
             <button type="button" class="filter-chip active" data-type="">All</button>
@@ -805,10 +842,17 @@
             <div>
               <p class="page-eyebrow page-eyebrow-caramel">Analytics</p>
               <h2>Sales Reports</h2>
-              <p>Track revenue by day, week, month, or custom range</p>
+              <p id="sales-report-subtitle">Track revenue by day, week, month, or custom range</p>
             </div>
           </div>
         </header>
+
+        {% if current_user.role != 'seller' %}
+        <div class="sales-report-modes" id="sales-report-modes">
+          <button type="button" class="sales-mode-btn active" data-sales-mode="date">By Date</button>
+          <button type="button" class="sales-mode-btn" data-sales-mode="shift">By Shift</button>
+        </div>
+        {% endif %}
 
         <div class="period-filters" id="period-filters">
           <button type="button" class="period-btn active" data-preset="today">Today</button>
@@ -832,40 +876,68 @@
           <button type="button" class="btn btn-primary" id="btn-apply-range">Apply</button>
         </div>
 
-        <div class="stats-grid" id="sales-summary-stats"></div>
+        <div id="sales-date-report">
+          <div class="stats-grid" id="sales-summary-stats"></div>
 
-        <div class="payment-breakdown" id="sales-payment-breakdown"></div>
+          <div class="payment-breakdown" id="sales-payment-breakdown"></div>
 
-        <div class="category-breakdown-section" id="sales-category-breakdown"></div>
+          <div class="category-breakdown-section" id="sales-category-breakdown"></div>
 
-        <div class="sales-layout">
-          <div class="card">
-            <div class="card-header">
-              <h3>Sales by Date</h3>
-              <span class="text-muted" id="sales-range-label"></span>
+          <div class="sales-layout">
+            <div class="card">
+              <div class="card-header">
+                <h3>Sales by Date</h3>
+                <span class="text-muted" id="sales-range-label"></span>
+              </div>
+              <div class="card-body sales-dates-list" id="sales-dates-list"></div>
             </div>
-            <div class="card-body sales-dates-list" id="sales-dates-list"></div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 id="sales-detail-title">Sales Detail</h3>
+                <span class="text-muted" id="sales-detail-subtitle"></span>
+              </div>
+              <div class="table-wrap" style="border:none;box-shadow:none;">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Product</th>
+                      <th>Qty</th>
+                      <th>Amount</th>
+                      <th>Payment</th>
+                      <th>Seller</th>
+                    </tr>
+                  </thead>
+                  <tbody id="sales-detail-body"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
+        </div>
 
-          <div class="card">
-            <div class="card-header">
-              <h3 id="sales-detail-title">Sales Detail</h3>
-              <span class="text-muted" id="sales-detail-subtitle"></span>
+        <div id="sales-shift-report" hidden>
+          <div class="stats-grid" id="shifts-summary-stats"></div>
+
+          <div class="payment-breakdown" id="shifts-payment-breakdown"></div>
+
+          <div class="sales-layout">
+            <div class="card">
+              <div class="card-header">
+                <h3>Shifts</h3>
+                <span class="text-muted" id="shifts-range-label"></span>
+              </div>
+              <div class="card-body sales-dates-list" id="shifts-list"></div>
             </div>
-            <div class="table-wrap" style="border:none;box-shadow:none;">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Product</th>
-                    <th>Qty</th>
-                    <th>Amount</th>
-                    <th>Payment</th>
-                    <th>Seller</th>
-                  </tr>
-                </thead>
-                <tbody id="sales-detail-body"></tbody>
-              </table>
+
+            <div class="card" id="shift-detail-card">
+              <div class="card-header">
+                <h3 id="shift-detail-title">Shift Detail</h3>
+                <span class="text-muted" id="shift-detail-subtitle"></span>
+              </div>
+              <div class="card-body" id="shift-detail-body">
+                <p class="text-muted shift-detail-placeholder">Select a shift to view details</p>
+              </div>
             </div>
           </div>
         </div>
@@ -958,6 +1030,14 @@
       <button type="button" class="bottom-nav-item" data-view="reconcile">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <span>My Shift</span>
+      </button>
+      <button type="button" class="bottom-nav-item seller-reports-nav" data-view="history" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>History</span>
+      </button>
+      <button type="button" class="bottom-nav-item seller-reports-nav" data-view="sales" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+        <span>Reports</span>
       </button>
       {% else %}
       <button type="button" class="bottom-nav-item" data-view="products">

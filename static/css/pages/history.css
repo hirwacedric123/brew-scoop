@@ -32,3 +32,77 @@
 #view-history .table-wrap:hover {
   box-shadow: var(--shadow-hover);
 }
+
+body.seller-reports-mode #view-history .data-table thead th:nth-child(7) {
+  display: none;
+}
+
+.history-shifts-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.history-shifts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.history-shifts-head h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--espresso);
+}
+
+.history-shift-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.history-shifts-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.history-shifts-list-card .card-body {
+  padding: 0.65rem 0.85rem;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.history-shift-detail-card .card-body {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.history-transactions-head {
+  margin-bottom: 0.85rem;
+}
+
+.history-transactions-head h3 {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--espresso);
+}
+
+@media (max-width: 900px) {
+  .history-shifts-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .history-shifts-list-card .card-body,
+  .history-shift-detail-card .card-body {
+    max-height: none;
+  }
+}

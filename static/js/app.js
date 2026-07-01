@@ -10,11 +10,16 @@ const state = {
   selectedProductId: null,
   deleteProductId: null,
   salesPreset: "today",
+  salesReportMode: "date",
   salesFrom: null,
   salesTo: null,
   salesReport: null,
+  shiftsReport: null,
   selectedSalesDate: null,
+  selectedShiftId: null,
   historySellerId: "",
+  historyShiftPreset: "today",
+  selectedHistoryShiftId: null,
   salesSellerId: "",
   sellers: [],
   cart: [],
@@ -43,9 +48,54 @@ function isSeller() {
   return state.currentUser?.role === "seller";
 }
 
+function canViewShiftReports() {
+  const role = state.currentUser?.role;
+  return role === "admin" || role === "stock_manager";
+}
+
 function canAccessView(viewId) {
   if (!isSeller()) return true;
-  return viewId === "sell" || viewId === "reconcile";
+  if (viewId === "sell" || viewId === "reconcile") return true;
+  if (viewId === "history" || viewId === "sales") return !hasOpenShift();
+  return false;
+}
+
+function sellerReportsUnlocked() {
+  return isSeller() && !hasOpenShift();
+}
+
+function updateSellerNavUi() {
+  if (!isSeller()) return;
+  const unlocked = sellerReportsUnlocked();
+  document.querySelectorAll(".seller-reports-nav").forEach((el) => {
+    el.hidden = !unlocked;
+  });
+}
+
+function configureSellerReportsUi() {
+  if (!isSeller()) return;
+
+  const historyChips = document.getElementById("history-filter-chips");
+  const historySeller = document.getElementById("history-seller-filter");
+  const historyType = document.getElementById("history-type-filter");
+  const historySubtitle = document.querySelector("#view-history .topbar-heading p");
+  const salesSeller = document.getElementById("sales-seller-filter");
+  const salesSubtitle = document.getElementById("sales-report-subtitle");
+
+  if (historyChips) historyChips.hidden = true;
+  if (historySeller) historySeller.hidden = true;
+  if (historyType) historyType.value = "sale";
+  if (historySubtitle) {
+    historySubtitle.textContent = "Your shifts and sales transactions";
+  }
+  const historyShiftsPanel = document.getElementById("history-shifts-panel");
+  const historyTxHead = document.getElementById("history-transactions-head");
+  if (historyShiftsPanel) historyShiftsPanel.hidden = false;
+  if (historyTxHead) historyTxHead.hidden = false;
+  if (salesSeller) salesSeller.hidden = true;
+  if (salesSubtitle) salesSubtitle.textContent = "Track your revenue by day, week, or month";
+
+  document.body.classList.add("seller-reports-mode");
 }
 
 const ROLE_LABELS = {
@@ -197,8 +247,12 @@ function toast(message, type = "success") {
 // ── Navigation ─────────────────────────────────────────────────────────────
 
 function initNavigation() {
-  document.querySelectorAll(".nav-item[data-view], .bottom-nav-item[data-view], [data-view].btn").forEach((btn) => {
-    btn.addEventListener("click", () => switchView(btn.dataset.view));
+  document.addEventListener("click", (e) => {
+    const trigger = e.target.closest(
+      ".nav-item[data-view], .bottom-nav-item[data-view], [data-view].btn, .shift-result-link[data-view]"
+    );
+    if (!trigger?.dataset.view) return;
+    switchView(trigger.dataset.view);
   });
 
   document.getElementById("btn-menu-toggle")?.addEventListener("click", openMobileNav);
@@ -225,7 +279,12 @@ function closeMobileNav() {
 }
 
 function switchView(viewId) {
-  if (!canAccessView(viewId)) return;
+  if (!canAccessView(viewId)) {
+    if (isSeller() && (viewId === "history" || viewId === "sales")) {
+      toast("Close your shift to view history and sales reports.", "error");
+    }
+    return;
+  }
 
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
@@ -245,12 +304,13 @@ function switchView(viewId) {
   if (viewId === "sell") loadSellView();
   if (viewId === "restock") loadRestockView();
   if (viewId === "history") {
-    loadSellers();
+    if (isSeller()) loadCategories();
+    else loadSellers();
     loadHistory();
   }
   if (viewId === "sales") {
-    loadSellers();
-    loadSalesReports();
+    if (!isSeller()) loadSellers();
+    loadSalesViewData();
   }
   if (viewId === "admin") loadAdminView();
   if (viewId === "reconcile") loadReconcileView();
@@ -766,6 +826,7 @@ function updateSellShiftUi() {
   if (banner) banner.hidden = open;
   if (layout) layout.classList.toggle("sell-locked", !open);
   if (checkoutBtn) checkoutBtn.disabled = !open;
+  updateSellerNavUi();
 }
 
 function togglePosMode() {
@@ -1252,6 +1313,46 @@ const SHIFT_HERO_ICONS = {
 };
 
 let shiftTimerInterval = null;
+let shiftUiPhase = "sell"; // "sell" | "close" while shift is open
+
+function setShiftUiPhase(phase) {
+  shiftUiPhase = phase === "close" ? "close" : "sell";
+  const data = state.sellerShift;
+  if (data?.has_open_shift && data.shift) {
+    const startedAt = formatDate(data.shift.opened_at);
+    const descEl = document.getElementById("shift-hero-desc");
+    if (descEl) {
+      descEl.textContent =
+        shiftUiPhase === "close"
+          ? `Started ${startedAt}. Enter your total collected to finish.`
+          : `Started ${startedAt}. Head to Sell to record orders — close when you're done.`;
+    }
+  }
+  renderShiftOpenPhase();
+}
+
+function renderShiftOpenPhase() {
+  const sellHint = document.getElementById("shift-sell-hint");
+  const closeCard = document.getElementById("shift-close-card");
+  const heroActions = document.getElementById("shift-hero-actions");
+  const panels = document.getElementById("shift-panels");
+  const subtitle = document.getElementById("reconcile-subtitle");
+  const closing = shiftUiPhase === "close";
+
+  if (sellHint) sellHint.hidden = closing;
+  if (closeCard) closeCard.hidden = !closing;
+  if (heroActions) heroActions.hidden = closing;
+  if (panels) {
+    panels.classList.remove("is-idle", "is-active", "is-closed", "is-selling", "is-closing");
+    panels.classList.add(closing ? "is-closing" : "is-selling");
+  }
+  if (subtitle) {
+    subtitle.textContent = closing
+      ? "Enter the total you collected — cash, MoMo, and Visa combined."
+      : "Sell during your shift, then enter your total collected to see if it matches what was recorded.";
+  }
+  updateShiftSteps(closing ? "close" : "sell");
+}
 
 async function refreshSellerShift() {
   if (!isSeller()) return null;
@@ -1343,7 +1444,7 @@ function updateShiftHero(state, title, desc, badge, iconKind = "idle") {
 function setShiftPanelsMode(mode) {
   const panels = document.getElementById("shift-panels");
   if (!panels) return;
-  panels.classList.remove("is-idle", "is-active", "is-closed");
+  panels.classList.remove("is-idle", "is-active", "is-closed", "is-selling", "is-closing");
   if (mode) panels.classList.add(mode);
 }
 
@@ -1498,6 +1599,16 @@ function renderShiftSummary(shift, message) {
         </div>
       </div>
       <p class="reconcile-closed-note">Shift closed — start a new one when you are ready to sell again.</p>
+      <div class="shift-result-actions">
+        <button type="button" class="btn btn-ghost shift-result-link" data-view="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          View history
+        </button>
+        <button type="button" class="btn btn-ghost shift-result-link" data-view="sales">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+          Sales report
+        </button>
+      </div>
     </div>
   `;
 
@@ -1516,11 +1627,10 @@ function renderShiftSummary(shift, message) {
 
 function renderShiftView() {
   const startCard = document.getElementById("shift-start-card");
-  const openCard = document.getElementById("shift-open-card");
   const closeCard = document.getElementById("shift-close-card");
   const resultCard = document.getElementById("shift-result-card");
-  const openedLabel = document.getElementById("shift-opened-label");
-  const activeMeta = document.getElementById("shift-active-meta");
+  const sellHint = document.getElementById("shift-sell-hint");
+  const heroActions = document.getElementById("shift-hero-actions");
   const cashInput = document.getElementById("reconcile-cash-amount");
 
   const data = state.sellerShift;
@@ -1528,37 +1638,30 @@ function renderShiftView() {
   const closedShift = !open && (data?.shift?.status === "closed" ? data.shift : data?.last_closed);
 
   if (startCard) startCard.hidden = open || !!closedShift;
-  if (openCard) openCard.hidden = !open;
-  if (closeCard) closeCard.hidden = !open;
   if (resultCard) resultCard.hidden = !closedShift;
+  if (sellHint) sellHint.hidden = true;
+  if (closeCard) closeCard.hidden = true;
+  if (heroActions) heroActions.hidden = true;
 
   if (open && data.shift) {
-    const duration = formatShiftDuration(data.shift.opened_at, true);
-    if (openedLabel) {
-      openedLabel.textContent = `Started ${formatDate(data.shift.opened_at)}`;
-    }
-    if (activeMeta) {
-      activeMeta.innerHTML = `
-        <div class="shift-meta-item is-live shift-meta-item-wide">
-          <span>Elapsed</span>
-          <strong id="shift-meta-duration">${esc(duration)}</strong>
-        </div>
-      `;
-    }
+    const startedAt = formatDate(data.shift.opened_at);
     if (cashInput) cashInput.value = "";
     updateShiftHero(
       "open",
       "Your shift is live",
-      "Sell during your shift. When you finish, enter the total you collected (cash + MoMo + Visa) to check against the system.",
+      shiftUiPhase === "close"
+        ? `Started ${startedAt}. Enter your total collected to finish.`
+        : `Started ${startedAt}. Head to Sell to record orders — close when you're done.`,
       "In progress",
       "open"
     );
     startShiftTimer(data.shift.opened_at);
-    setShiftPanelsMode("is-active");
-    updateShiftSteps("sell");
+    renderShiftOpenPhase();
   } else if (closedShift && resultCard) {
+    shiftUiPhase = "sell";
     renderShiftSummary(closedShift);
   } else {
+    shiftUiPhase = "sell";
     updateShiftHero(
       "idle",
       "Ready to start your shift",
@@ -1569,12 +1672,14 @@ function renderShiftView() {
     setShiftPanelsMode("is-idle");
     updateShiftSteps("start");
   }
+  updateSellerNavUi();
 }
 
 async function loadReconcileView() {
   if (!isSeller()) return;
 
   updateShiftDateBadge();
+  shiftUiPhase = "sell";
 
   try {
     await refreshSellerShift();
@@ -1596,6 +1701,7 @@ async function submitStartShift(e) {
       body: JSON.stringify({}),
     });
     state.sellerShift = data;
+    shiftUiPhase = "sell";
     toast(data.message || "Shift started");
     renderShiftView();
     updateSellShiftUi();
@@ -1642,6 +1748,7 @@ async function submitCloseShift(e) {
 
 function showStartShiftForm() {
   state.sellerShift = { has_open_shift: false };
+  shiftUiPhase = "sell";
   const resultCard = document.getElementById("shift-result-card");
   if (resultCard) resultCard.hidden = true;
   renderShiftView();
@@ -1905,6 +2012,7 @@ document.querySelectorAll(".qty-preset").forEach((btn) => {
 // ── History ────────────────────────────────────────────────────────────────
 
 async function loadSellers() {
+  if (isSeller()) return;
   try {
     state.sellers = await api("/api/sellers");
     populateSellerFilter("history-seller-filter", state.historySellerId);
@@ -1940,17 +2048,121 @@ async function loadHistory() {
   if (category) params.set("category", category);
 
   try {
-    const transactions = await api(`/api/transactions?${params}`);
+    const requests = [api(`/api/transactions?${params}`)];
+    if (isSeller()) requests.push(loadHistoryShifts());
+    const [transactions] = await Promise.all(requests);
     renderHistory(transactions);
   } catch (e) {
     toast(e.message, "error");
   }
 }
 
+async function loadHistoryShifts() {
+  const url = `/api/shifts/report?preset=${state.historyShiftPreset || "today"}`;
+  const report = await api(url);
+  state.historyShiftsReport = report;
+  renderHistoryShifts(report);
+  return report;
+}
+
+function renderHistoryShifts(report) {
+  const { shifts } = report;
+  const listEl = document.getElementById("history-shifts-list");
+  if (!listEl) return;
+
+  if (!shifts.length) {
+    listEl.innerHTML = emptyState(UI_ICONS.chart, "No shifts", "Closed shifts in this period will appear here.");
+    renderHistoryShiftDetailPlaceholder();
+    return;
+  }
+
+  const maxSales = Math.max(...shifts.map((s) => s.total_sales), 1);
+  const selectedVisible = shifts.some((s) => s.id === state.selectedHistoryShiftId);
+  if (!selectedVisible) state.selectedHistoryShiftId = shifts[0]?.id || null;
+
+  listEl.innerHTML = shifts
+    .map((shift) => buildShiftListItemHtml(shift, state.selectedHistoryShiftId, maxSales, "selectHistoryShift"))
+    .join("");
+
+  if (state.selectedHistoryShiftId) {
+    loadHistoryShiftDetail(state.selectedHistoryShiftId);
+  } else {
+    renderHistoryShiftDetailPlaceholder();
+  }
+}
+
+function buildShiftListItemHtml(shift, selectedId, maxSales, selectFn) {
+  const statusBadge =
+    shift.status === "open"
+      ? '<span class="shift-status-badge open">Open</span>'
+      : shiftStatusBadge(shift.status_label);
+  const timeLine =
+    shift.status === "open"
+      ? `Started ${formatTime(shift.opened_at)} · ${formatShiftDuration(shift.opened_at, true)}`
+      : `${formatTime(shift.opened_at)} → ${formatTime(shift.closed_at)}`;
+  const sellerLine = isSeller() ? "" : `${esc(shift.seller_name)} `;
+  return `
+    <button type="button" class="sales-date-item shift-list-item ${selectedId === shift.id ? "active" : ""}"
+      onclick="${selectFn}(${shift.id})">
+      <div class="sales-date-info">
+        <strong>${sellerLine}${statusBadge}</strong>
+        <span>${timeLine}</span>
+        <span>${fmtNum.format(shift.sale_count)} sale${shift.sale_count !== 1 ? "s" : ""} · ${fmtNum.format(shift.units_sold)} units</span>
+      </div>
+      <div class="sales-date-revenue">${fmt.format(shift.total_sales)}</div>
+      <div class="sales-date-bar" style="width:${(shift.total_sales / maxSales) * 100}%"></div>
+    </button>`;
+}
+
+function renderHistoryShiftDetailPlaceholder() {
+  const title = document.getElementById("history-shift-detail-title");
+  const subtitle = document.getElementById("history-shift-detail-subtitle");
+  const body = document.getElementById("history-shift-detail-body");
+  if (title) title.textContent = "Shift Detail";
+  if (subtitle) subtitle.textContent = "";
+  if (body) {
+    body.innerHTML = '<p class="text-muted shift-detail-placeholder">Select a shift to view details</p>';
+  }
+}
+
+async function selectHistoryShift(shiftId) {
+  state.selectedHistoryShiftId = shiftId;
+  if (state.historyShiftsReport) renderHistoryShifts(state.historyShiftsReport);
+  await loadHistoryShiftDetail(shiftId);
+}
+
+async function loadHistoryShiftDetail(shiftId) {
+  try {
+    const shift = await api(`/api/shifts/${shiftId}`);
+    renderShiftDetail(shift, {
+      title: "history-shift-detail-title",
+      subtitle: "history-shift-detail-subtitle",
+      body: "history-shift-detail-body",
+      ownShift: isSeller(),
+    });
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function initHistoryShiftFilters() {
+  document.querySelectorAll("[data-history-shift-preset]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-history-shift-preset]").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.historyShiftPreset = btn.dataset.historyShiftPreset;
+      state.selectedHistoryShiftId = null;
+      loadHistoryShifts().catch((e) => toast(e.message, "error"));
+    });
+  });
+}
+
 function renderHistory(transactions) {
   const tbody = document.getElementById("history-table-body");
+  const hideSellerCol = isSeller();
   if (!transactions.length) {
-    tbody.innerHTML = `<tr><td colspan="8">${emptyState(UI_ICONS.clock, "No transactions", "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
+    const cols = hideSellerCol ? 7 : 8;
+    tbody.innerHTML = `<tr><td colspan="${cols}">${emptyState(UI_ICONS.clock, "No transactions", hideSellerCol ? "Your sales will appear here." : "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
     return;
   }
 
@@ -1966,7 +2178,7 @@ function renderHistory(transactions) {
       <td>${formatTransactionQty(t)}</td>
       <td>${t.type === "sale" ? fmt.format(t.total_amount) : "—"}</td>
       <td>${t.type === "sale" ? paymentMethodLabel(t.payment_method) : "—"}</td>
-      <td>${t.type === "sale" ? sellerLabel(t) : "—"}</td>
+      ${hideSellerCol ? "" : `<td>${t.type === "sale" ? sellerLabel(t) : "—"}</td>`}
       <td style="color:var(--text-muted);font-size:0.82rem">${esc(t.notes || "—")}</td>
     </tr>`
     )
@@ -1975,7 +2187,45 @@ function renderHistory(transactions) {
 
 // ── Sales Reports ──────────────────────────────────────────────────────────
 
+function setSalesReportMode(mode) {
+  state.salesReportMode = mode;
+  const datePanel = document.getElementById("sales-date-report");
+  const shiftPanel = document.getElementById("sales-shift-report");
+  const subtitle = document.getElementById("sales-report-subtitle");
+
+  document.querySelectorAll(".sales-mode-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.salesMode === mode);
+  });
+
+  if (datePanel) datePanel.hidden = mode !== "date";
+  if (shiftPanel) shiftPanel.hidden = mode !== "shift";
+
+  if (subtitle) {
+    subtitle.textContent =
+      mode === "shift"
+        ? "Review seller shifts — start and end times, sales totals, and reconciliation"
+        : "Track revenue by day, week, month, or custom range";
+  }
+}
+
+function loadSalesViewData(from, to) {
+  if (canViewShiftReports() && state.salesReportMode === "shift") {
+    loadShiftsReport(from, to);
+  } else {
+    loadSalesReports(from, to);
+  }
+}
+
 function initSalesReports() {
+  document.querySelectorAll(".sales-mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.salesMode === state.salesReportMode) return;
+      setSalesReportMode(btn.dataset.salesMode);
+      state.selectedShiftId = null;
+      loadSalesViewData();
+    });
+  });
+
   document.querySelectorAll(".period-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".period-btn").forEach((b) => b.classList.remove("active"));
@@ -1984,7 +2234,8 @@ function initSalesReports() {
       document.getElementById("custom-range-bar").hidden = state.salesPreset !== "custom";
       if (state.salesPreset !== "custom") {
         state.selectedSalesDate = null;
-        loadSalesReports();
+        state.selectedShiftId = null;
+        loadSalesViewData();
       }
     });
   });
@@ -2001,7 +2252,8 @@ function initSalesReports() {
       return;
     }
     state.selectedSalesDate = null;
-    loadSalesReports(from, to);
+    state.selectedShiftId = null;
+    loadSalesViewData(from, to);
   });
 }
 
@@ -2134,7 +2386,8 @@ function renderSalesDetail(sales, date, from, to) {
   }
 
   if (!sales.length) {
-    tbody.innerHTML = `<tr><td colspan="6">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
+    const cols = isSeller() ? 5 : 6;
+    tbody.innerHTML = `<tr><td colspan="${cols}">${emptyState(UI_ICONS.sales, "No sales", "Select a date or adjust your date range.")}</td></tr>`;
     return;
   }
 
@@ -2149,7 +2402,7 @@ function renderSalesDetail(sales, date, from, to) {
       <td>${s.quantity}</td>
       <td><strong>${fmt.format(s.total_amount)}</strong></td>
       <td>${paymentMethodLabel(s.payment_method)}</td>
-      <td>${sellerLabel(s)}</td>
+      ${isSeller() ? "" : `<td>${sellerLabel(s)}</td>`}
     </tr>`
     )
     .join("");
@@ -2160,6 +2413,182 @@ function selectSalesDate(date) {
   if (state.salesReport) {
     renderSalesReport(state.salesReport);
   }
+}
+
+async function loadShiftsReport(from, to) {
+  try {
+    const sellerId = document.getElementById("sales-seller-filter")?.value || "";
+    state.salesSellerId = sellerId;
+
+    let url = "/api/shifts/report?";
+    if (state.salesPreset === "custom" && from && to) {
+      url += `from=${from}&to=${to}`;
+    } else if (state.salesPreset !== "custom") {
+      url += `preset=${state.salesPreset}`;
+    } else {
+      return;
+    }
+    if (sellerId) url += `&user_id=${encodeURIComponent(sellerId)}`;
+
+    state.shiftsReport = await api(url);
+    state.salesFrom = state.shiftsReport.from;
+    state.salesTo = state.shiftsReport.to;
+    renderShiftsReport(state.shiftsReport);
+
+    if (state.selectedShiftId) {
+      const stillVisible = state.shiftsReport.shifts.some((s) => s.id === state.selectedShiftId);
+      if (stillVisible) {
+        await loadShiftDetail(state.selectedShiftId);
+      } else {
+        state.selectedShiftId = null;
+        renderShiftDetailPlaceholder();
+      }
+    }
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function renderShiftsReport(report) {
+  const { summary, payment_breakdown, shifts, from, to } = report;
+
+  document.getElementById("shifts-summary-stats").innerHTML = `
+    ${statCard("revenue", UI_ICONS.revenue, "Total Sales", fmt.format(summary.total_sales), formatRangeLabel(from, to))}
+    ${statCard("sales", UI_ICONS.sales, "Shifts", fmtNum.format(summary.shift_count), `${summary.closed_shifts} closed · ${summary.open_shifts} open`)}
+    ${statCard("stock", UI_ICONS.chart, "Units Sold", fmtNum.format(summary.units_sold), `${fmtNum.format(summary.sale_count)} line items`)}
+    ${statCard("alert", UI_ICONS.calendar, "Net Variance", fmt.format(Math.abs(summary.total_variance)), summary.total_variance === 0 ? "All shifts balanced" : summary.total_variance > 0 ? "Over overall" : "Short overall")}
+  `;
+
+  const payments = payment_breakdown || [];
+  const breakdownEl = document.getElementById("shifts-payment-breakdown");
+  if (breakdownEl) {
+    breakdownEl.innerHTML = `
+      <h3 class="payment-breakdown-title">Sales by Payment</h3>
+      <div class="payment-breakdown-grid">
+        ${payments
+          .map(
+            (p) => `
+          <div class="payment-breakdown-card payment-${p.method}">
+            <span class="payment-breakdown-label">${esc(p.label)}</span>
+            <strong class="payment-breakdown-value">${fmt.format(p.revenue)}</strong>
+            <span class="payment-breakdown-sub">across all shifts</span>
+          </div>`
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
+  document.getElementById("shifts-range-label").textContent = formatRangeLabel(from, to);
+
+  const listEl = document.getElementById("shifts-list");
+  if (!shifts.length) {
+    listEl.innerHTML = emptyState(UI_ICONS.chart, "No shifts", "No seller shifts in this period.");
+    renderShiftDetailPlaceholder();
+    return;
+  }
+
+  const maxSales = Math.max(...shifts.map((s) => s.total_sales), 1);
+  listEl.innerHTML = shifts
+    .map((shift) => buildShiftListItemHtml(shift, state.selectedShiftId, maxSales, "selectShift"))
+    .join("");
+
+  if (!state.selectedShiftId && shifts.length) {
+    selectShift(shifts[0].id);
+  }
+}
+
+function shiftStatusBadge(statusLabel) {
+  if (statusLabel === "balanced") {
+    return '<span class="shift-status-badge balanced">Balanced</span>';
+  }
+  if (statusLabel === "over") {
+    return '<span class="shift-status-badge over">Over</span>';
+  }
+  return '<span class="shift-status-badge short">Short</span>';
+}
+
+function renderShiftDetailPlaceholder() {
+  document.getElementById("shift-detail-title").textContent = "Shift Detail";
+  document.getElementById("shift-detail-subtitle").textContent = "";
+  document.getElementById("shift-detail-body").innerHTML =
+    '<p class="text-muted shift-detail-placeholder">Select a shift to view details</p>';
+}
+
+async function loadShiftDetail(shiftId) {
+  try {
+    const shift = await api(`/api/shifts/${shiftId}`);
+    renderShiftDetail(shift);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function renderShiftDetail(shift, targets = {}) {
+  const title = document.getElementById(targets.title || "shift-detail-title");
+  const subtitle = document.getElementById(targets.subtitle || "shift-detail-subtitle");
+  const body = document.getElementById(targets.body || "shift-detail-body");
+  if (!title || !body) return;
+
+  title.textContent = targets.ownShift ? "Your Shift" : `${shift.seller_name}'s Shift`;
+  if (subtitle) subtitle.textContent = formatShiftRange(shift);
+
+  const payTotal = (shift.cash_sales || 0) + (shift.momo_sales || 0) + (shift.visa_sales || 0);
+  const isOpen = shift.status === "open";
+  const status = shift.status_label ? reconcileStatusLabel(shift.status_label) : null;
+
+  let reconcileSection = "";
+  if (!isOpen && status) {
+    const varianceChip =
+      shift.status_label === "balanced"
+        ? "Balanced"
+        : shift.status_label === "over"
+          ? `+${fmt.format(Math.abs(shift.variance || 0))}`
+          : `−${fmt.format(Math.abs(shift.variance || 0))}`;
+    reconcileSection = `
+      <div class="shift-detail-reconcile ${status.cls}">
+        <div class="shift-detail-reconcile-head">
+          <span class="shift-result-status ${status.cls}">${status.text}</span>
+          <span class="shift-variance-chip ${status.cls}">${esc(varianceChip)}</span>
+        </div>
+        <div class="reconcile-grid shift-detail-stats">
+          ${statCard("revenue", UI_ICONS.revenue, "Recorded", fmt.format(shift.total_sales), "System total")}
+          ${statCard("sales", UI_ICONS.sales, "Seller entered", fmt.format(shift.counted_cash), "All payments combined")}
+          ${statCard("month", UI_ICONS.chart, "Difference", fmt.format(Math.abs(shift.variance || 0)), shift.status_label === "balanced" ? "No difference" : status.text.toLowerCase())}
+        </div>
+      </div>
+    `;
+  } else if (isOpen) {
+    reconcileSection = `
+      <div class="shift-detail-reconcile open">
+        <p class="shift-detail-open-note">This shift is still open — totals update live as sales are recorded.</p>
+        <div class="reconcile-grid shift-detail-stats">
+          ${statCard("revenue", UI_ICONS.revenue, "Sales so far", fmt.format(shift.total_sales), "Live total")}
+          ${statCard("sales", UI_ICONS.sales, "Line items", fmtNum.format(shift.sale_count), "sales recorded")}
+          ${statCard("stock", UI_ICONS.chart, "Units", fmtNum.format(shift.units_sold), "sold this shift")}
+        </div>
+      </div>
+    `;
+  }
+
+  body.innerHTML = `
+    ${reconcileSection}
+    <div class="reconcile-payments shift-detail-payments">
+      <h4>Payment breakdown</h4>
+      ${renderPaymentRow("Cash", shift.cash_sales, payTotal, "cash")}
+      ${renderPaymentRow("MoMo", shift.momo_sales, payTotal, "momo")}
+      ${renderPaymentRow("Visa", shift.visa_sales, payTotal, "visa")}
+    </div>
+    ${renderShiftSalesHistory(shift.sales)}
+  `;
+}
+
+async function selectShift(shiftId) {
+  state.selectedShiftId = state.selectedShiftId === shiftId ? state.selectedShiftId : shiftId;
+  if (state.shiftsReport) {
+    renderShiftsReport(state.shiftsReport);
+  }
+  await loadShiftDetail(shiftId);
 }
 
 // ── Admin: User Management ─────────────────────────────────────────────────
@@ -2510,13 +2939,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
   initNavigation();
   initSalesReports();
+  initHistoryShiftFilters();
   initPosShortcuts();
   initShiftPresets();
 
   if (isSeller()) {
+    configureSellerReportsUi();
     loadCategories().then(() => {
       refreshSellerShift().then(() => {
         loadSellView();
+        updateSellerNavUi();
       });
     });
   } else {
@@ -2580,6 +3012,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shift-start-form")?.addEventListener("submit", submitStartShift);
   document.getElementById("shift-close-form")?.addEventListener("submit", submitCloseShift);
   document.getElementById("btn-new-shift")?.addEventListener("click", showStartShiftForm);
+  document.getElementById("btn-show-close")?.addEventListener("click", () => {
+    setShiftUiPhase("close");
+    document.getElementById("reconcile-cash-amount")?.focus();
+  });
+  document.getElementById("btn-back-to-sell")?.addEventListener("click", () => setShiftUiPhase("sell"));
 
   document.getElementById("restock-form").addEventListener("submit", submitRestock);
   document.getElementById("adjust-form").addEventListener("submit", submitAdjust);
@@ -2590,7 +3027,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("sales-seller-filter")?.addEventListener("change", () => {
     const from = document.getElementById("sales-from")?.value;
     const to = document.getElementById("sales-to")?.value;
-    loadSalesReports(from, to);
+    state.selectedShiftId = null;
+    loadSalesViewData(from, to);
   });
 
   document.querySelectorAll("#history-filter-chips .filter-chip").forEach((chip) => {
@@ -2640,6 +3078,8 @@ window.addToCart = addToCart;
 window.updateCartItemQty = updateCartItemQty;
 window.removeFromCart = removeFromCart;
 window.selectSalesDate = selectSalesDate;
+window.selectShift = selectShift;
+window.selectHistoryShift = selectHistoryShift;
 window.selectSellCategory = selectSellCategory;
 window.openEditUser = openEditUser;
 window.openDeleteUser = openDeleteUser;

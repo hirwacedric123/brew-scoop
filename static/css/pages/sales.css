@@ -21,6 +21,134 @@
   align-items: center;
 }
 
+.sales-report-modes {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  margin-bottom: 1rem;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+}
+
+.sales-mode-btn {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.sales-mode-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.sales-mode-btn.active {
+  background: white;
+  color: var(--coffee);
+  box-shadow: var(--shadow-xs);
+}
+
+.shift-status-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
+.shift-status-badge.open {
+  background: rgba(76, 175, 80, 0.15);
+  color: #2e7d32;
+}
+
+.shift-status-badge.balanced {
+  background: rgba(76, 175, 80, 0.12);
+  color: #388e3c;
+}
+
+.shift-status-badge.over {
+  background: rgba(255, 152, 0, 0.15);
+  color: #e65100;
+}
+
+.shift-status-badge.short {
+  background: rgba(244, 67, 54, 0.12);
+  color: #c62828;
+}
+
+.shift-list-item .sales-date-info strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.shift-detail-placeholder {
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.shift-detail-reconcile {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--foam);
+}
+
+.shift-detail-reconcile.balanced {
+  border-color: rgba(76, 175, 80, 0.25);
+}
+
+.shift-detail-reconcile.over {
+  border-color: rgba(255, 152, 0, 0.25);
+}
+
+.shift-detail-reconcile.short {
+  border-color: rgba(244, 67, 54, 0.25);
+}
+
+.shift-detail-reconcile.open {
+  border-color: rgba(76, 175, 80, 0.2);
+}
+
+.shift-detail-reconcile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.shift-detail-open-note {
+  margin: 0 0 0.85rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.shift-detail-stats {
+  margin-bottom: 0;
+}
+
+.shift-detail-payments {
+  margin-bottom: 1.25rem;
+}
+
+#shift-detail-body .shift-sales-history {
+  margin-top: 0.5rem;
+}
+
 #sales-seller-filter {
   margin-left: auto;
   min-width: 180px;
@@ -285,4 +413,8 @@
   .sales-layout {
     grid-template-columns: 1fr;
   }
+}
+
+body.seller-reports-mode #view-sales .data-table thead th:nth-child(6) {
+  display: none;
 }

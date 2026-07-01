@@ -197,9 +197,103 @@
   line-height: 1;
 }
 
+.shift-hero-actions {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  margin-top: 0.15rem;
+  border-top: 1px solid rgba(107, 143, 113, 0.2);
+}
+
+.shift-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-width: 11rem;
+  box-shadow: 0 4px 14px rgba(44, 24, 16, 0.18);
+}
+
+.shift-hero-cta svg {
+  width: 18px;
+  height: 18px;
+}
+
+.shift-sell-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid rgba(107, 143, 113, 0.25);
+  background: linear-gradient(135deg, #fafffb, #f3f8f4);
+  box-shadow: var(--shadow-sm);
+  animation: shift-panel-in 0.35s ease;
+}
+
+.shift-sell-hint p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 28rem;
+}
+
+.shift-link-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--coffee);
+  white-space: nowrap;
+}
+
+.shift-link-cta svg {
+  width: 16px;
+  height: 16px;
+}
+
+.shift-link-cta:hover {
+  color: var(--espresso);
+  background: rgba(93, 64, 55, 0.06);
+}
+
+.shift-back-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: -0.25rem 0 0.15rem;
+  padding-left: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.shift-back-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.shift-back-link:hover {
+  color: var(--coffee);
+}
+
+.shift-panel[hidden],
+.shift-sell-hint[hidden],
+.shift-hero-actions[hidden],
+.shift-hero-aside[hidden] {
+  display: none !important;
+}
+
 .shift-hero[data-state="open"] {
   border-color: rgba(107, 143, 113, 0.4);
   background: linear-gradient(145deg, #fafffb 0%, #eef5f0 50%, #e5efe8 100%);
+  flex-wrap: wrap;
 }
 
 .shift-hero[data-state="open"] .shift-hero-glow {
@@ -960,6 +1054,30 @@
   border-top: 1px dashed var(--border-subtle);
 }
 
+.shift-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: center;
+  padding-top: 0.85rem;
+}
+
+.shift-result-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+}
+
+.shift-result-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.seller-reports-nav[hidden] {
+  display: none !important;
+}
+
 /* ── Sell page shift banner ──────────────────────────────────────────────── */
 
 .shift-banner {
@@ -1123,6 +1241,18 @@
   width: 100%;
 }
 
+.shift-panels.is-selling {
+  display: none;
+}
+
+.shift-panels.is-closing {
+  max-width: 520px;
+}
+
+.shift-panels.is-closing .shift-panel-close {
+  width: 100%;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (min-width: 768px) {
@@ -1132,6 +1262,17 @@
 
   .shift-panels.is-active .shift-panel-result {
     grid-column: 1 / -1;
+  }
+
+  .shift-hero[data-state="open"] .shift-hero-actions {
+    flex: 0 0 auto;
+    flex-basis: auto;
+    margin-left: auto;
+    padding-top: 0;
+    margin-top: 0;
+    border-top: none;
+    padding-left: 1rem;
+    align-self: center;
   }
 }
 
@@ -1162,6 +1303,23 @@
 
   .shift-hero-aside[hidden] {
     display: none !important;
+  }
+
+  .shift-sell-hint {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .shift-link-cta {
+    white-space: normal;
+  }
+
+  .shift-hero[data-state="open"] .shift-hero-actions {
+    width: 100%;
+  }
+
+  .shift-hero-cta {
+    width: 100%;
   }
 
   .shift-steps::before {

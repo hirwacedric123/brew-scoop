@@ -490,6 +490,20 @@ def _sale_user_clause(user_id, alias=""):
     return f" AND {prefix}user_id = ?", [uid]
 
 
+def _seller_must_close_shift(db, user):
+    if user["role"] != "seller":
+        return None
+    if get_open_seller_shift(db, user["id"]):
+        return "Close your shift before viewing reports"
+    return None
+
+
+def _scoped_user_id(user, requested_user_id):
+    if user["role"] == "seller":
+        return str(user["id"])
+    return requested_user_id
+
+
 def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
     user_clause, user_params = _sale_user_clause(user_id)
     rows = db.execute(
@@ -1498,15 +1512,24 @@ def adjust_cups():
 # ── Transactions & Dashboard API ─────────────────────────────────────────────
 
 @app.route("/api/transactions", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "stock_manager", "seller")
 def list_transactions():
     db = get_db()
+    user = get_current_user(db)
+    blocked = _seller_must_close_shift(db, user)
+    if blocked:
+        return jsonify({"error": blocked}), 403
+
     limit = min(int(request.args.get("limit", 50)), 500)
     tx_type = request.args.get("type", "").strip()
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
     user_id = request.args.get("user_id", "").strip()
     category = request.args.get("category", "").strip()
+
+    if user["role"] == "seller":
+        tx_type = "sale"
+        user_id = str(user["id"])
 
     query = """
         SELECT t.*, p.name AS product_name, p.category,
@@ -1584,12 +1607,18 @@ def sales_dates():
 
 
 @app.route("/api/sales/report", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "stock_manager", "seller")
 def sales_report():
+    db = get_db()
+    user = get_current_user(db)
+    blocked = _seller_must_close_shift(db, user)
+    if blocked:
+        return jsonify({"error": blocked}), 403
+
     preset = request.args.get("preset", "").strip()
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
-    user_id = request.args.get("user_id", "").strip()
+    user_id = _scoped_user_id(user, request.args.get("user_id", "").strip())
 
     if preset == "today":
         date_from = date_to = today_kigali()
@@ -1605,7 +1634,6 @@ def sales_report():
     if not start or not end or start > end:
         return jsonify({"error": "Invalid date range"}), 400
 
-    db = get_db()
     user_clause, user_params = _sale_user_clause(user_id, "t")
     sales_rows = db.execute(
         f"""SELECT t.*, p.name AS product_name, p.category,
@@ -1636,6 +1664,181 @@ def sales_report():
         "category_breakdown": categories,
         "sales": [row_to_transaction(r) for r in sales_rows],
     })
+
+
+def _shift_report_row(db, row):
+    data = {
+        "id": row["id"],
+        "seller_id": row["user_id"],
+        "seller_name": row["seller_name"],
+        "status": row["status"],
+        "opened_at": row["opened_at"],
+        "closed_at": row["closed_at"],
+    }
+    if row["status"] == "closed":
+        data.update({
+            "counted_cash": round(row["counted_cash"] or 0, 2),
+            "expected_cash": round(row["expected_cash"] or 0, 2),
+            "variance": round(row["variance"] or 0, 2),
+            "total_sales": round(row["total_sales"] or 0, 2),
+            "cash_sales": round(row["cash_sales"] or 0, 2),
+            "momo_sales": round(row["momo_sales"] or 0, 2),
+            "visa_sales": round(row["visa_sales"] or 0, 2),
+            "units_sold": row["units_sold"] or 0,
+            "sale_count": row["sale_count"] or 0,
+            "status_label": _shift_variance_status(row["variance"] or 0),
+        })
+    else:
+        data.update(_seller_sales_for_shift(db, row["id"]))
+        data["counted_cash"] = None
+        data["expected_cash"] = None
+        data["variance"] = None
+        data["status_label"] = None
+    return data
+
+
+def _shifts_summary(shifts):
+    total_sales = sum(s["total_sales"] for s in shifts)
+    cash_sales = sum(s["cash_sales"] for s in shifts)
+    momo_sales = sum(s["momo_sales"] for s in shifts)
+    visa_sales = sum(s["visa_sales"] for s in shifts)
+    units_sold = sum(s["units_sold"] for s in shifts)
+    sale_count = sum(s["sale_count"] for s in shifts)
+    closed = [s for s in shifts if s["status"] == "closed"]
+    open_count = sum(1 for s in shifts if s["status"] == "open")
+    total_variance = sum(s["variance"] or 0 for s in closed)
+    return {
+        "shift_count": len(shifts),
+        "open_shifts": open_count,
+        "closed_shifts": len(closed),
+        "total_sales": round(total_sales, 2),
+        "cash_sales": round(cash_sales, 2),
+        "momo_sales": round(momo_sales, 2),
+        "visa_sales": round(visa_sales, 2),
+        "units_sold": units_sold,
+        "sale_count": sale_count,
+        "total_variance": round(total_variance, 2),
+    }
+
+
+def _shifts_payment_breakdown(summary):
+    return [
+        {
+            "method": "momo",
+            "label": "MoMo",
+            "revenue": summary["momo_sales"],
+            "checkouts": summary["sale_count"],
+        },
+        {
+            "method": "cash",
+            "label": "Cash",
+            "revenue": summary["cash_sales"],
+            "checkouts": summary["sale_count"],
+        },
+        {
+            "method": "visa",
+            "label": "Visa",
+            "revenue": summary["visa_sales"],
+            "checkouts": summary["sale_count"],
+        },
+    ]
+
+
+def _shifts_date_range_params():
+    preset = request.args.get("preset", "").strip()
+    date_from = request.args.get("from", "").strip()
+    date_to = request.args.get("to", "").strip()
+
+    if preset == "today":
+        date_from = date_to = today_kigali()
+    elif preset == "week":
+        date_from, date_to = week_range_kigali()
+    elif preset == "month":
+        date_from, date_to = month_range_kigali()
+    elif not date_from or not date_to:
+        return None, None, None, ("Provide a preset or both from and to dates", 400)
+
+    start = parse_date(date_from)
+    end = parse_date(date_to)
+    if not start or not end or start > end:
+        return None, None, None, ("Invalid date range", 400)
+
+    return date_from, date_to, preset, None
+
+
+@app.route("/api/shifts/report", methods=["GET"])
+@role_required("admin", "stock_manager", "seller")
+def shifts_report():
+    db = get_db()
+    user = get_current_user(db)
+    blocked = _seller_must_close_shift(db, user)
+    if blocked:
+        return jsonify({"error": blocked}), 403
+
+    date_from, date_to, preset, error = _shifts_date_range_params()
+    if error:
+        return jsonify({"error": error[0]}), error[1]
+
+    user_id = _scoped_user_id(user, request.args.get("user_id", "").strip())
+    user_clause = ""
+    user_params = []
+    uid = _parse_user_id_filter(user_id)
+    if uid is not None:
+        user_clause = " AND s.user_id = ?"
+        user_params = [uid]
+
+    rows = db.execute(
+        f"""SELECT s.*, u.display_name AS seller_name
+            FROM seller_shifts s
+            JOIN users u ON u.id = s.user_id
+            WHERE (
+                substr(s.opened_at, 1, 10) >= ? AND substr(s.opened_at, 1, 10) <= ?
+                OR (s.closed_at IS NOT NULL
+                    AND substr(s.closed_at, 1, 10) >= ? AND substr(s.closed_at, 1, 10) <= ?)
+            ){user_clause}
+            ORDER BY s.opened_at DESC""",
+        (date_from, date_to, date_from, date_to, *user_params),
+    ).fetchall()
+
+    shifts = [_shift_report_row(db, row) for row in rows]
+    summary = _shifts_summary(shifts)
+
+    return jsonify({
+        "from": date_from,
+        "to": date_to,
+        "preset": preset or "custom",
+        "user_id": uid,
+        "summary": summary,
+        "payment_breakdown": _shifts_payment_breakdown(summary),
+        "shifts": shifts,
+    })
+
+
+@app.route("/api/shifts/<int:shift_id>", methods=["GET"])
+@role_required("admin", "stock_manager", "seller")
+def shift_detail(shift_id):
+    db = get_db()
+    user = get_current_user(db)
+    blocked = _seller_must_close_shift(db, user)
+    if blocked:
+        return jsonify({"error": blocked}), 403
+
+    row = db.execute(
+        """SELECT s.*, u.display_name AS seller_name
+           FROM seller_shifts s
+           JOIN users u ON u.id = s.user_id
+           WHERE s.id = ?""",
+        (shift_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "Shift not found"}), 404
+
+    if user["role"] == "seller" and row["user_id"] != user["id"]:
+        return jsonify({"error": "Access denied"}), 403
+
+    data = _shift_report_row(db, row)
+    data["sales"] = _shift_sales_for_response(db, shift_id)
+    return jsonify(data)
 
 
 @app.route("/api/dashboard", methods=["GET"])
