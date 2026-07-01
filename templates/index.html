@@ -1076,8 +1076,9 @@
           <p class="form-hint">Used for daily sales report emails</p>
         </div>
         <div class="form-group" id="user-password-group">
-          <label for="user-password">Password *</label>
+          <label for="user-password">Temporary password *</label>
           <input type="password" id="user-password" minlength="6" placeholder="At least 6 characters">
+          <p class="form-hint">The user must change this password on first sign-in</p>
         </div>
         <div class="form-group">
           <label for="user-role">Role</label>
@@ -1248,6 +1249,9 @@
 
   <script>
     window.CURRENT_USER = {{ current_user|tojson }};
+    if (window.CURRENT_USER?.must_change_password) {
+      window.location.replace("/change-password");
+    }
   </script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>

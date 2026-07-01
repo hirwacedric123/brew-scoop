@@ -22,6 +22,7 @@ def init_users_table(db):
             email TEXT,
             role TEXT NOT NULL CHECK(role IN ('admin', 'stock_manager', 'seller')),
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -40,6 +41,9 @@ def row_to_user(row):
         "email": (row["email"] or "").strip() if "email" in row.keys() else "",
         "role": row["role"],
         "is_active": bool(row["is_active"]),
+        "must_change_password": bool(row["must_change_password"])
+        if "must_change_password" in row.keys()
+        else False,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -133,15 +137,49 @@ def validate_email(value):
     return None
 
 
+def password_change_exempt():
+    path = request.path
+    if path == "/change-password":
+        return True
+    for prefix in ("/api/auth/change-password", "/api/auth/logout", "/api/auth/me"):
+        if path == prefix or path.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def _password_change_block_response():
+    if request.path.startswith("/api/"):
+        return (
+            jsonify(
+                {
+                    "error": "You must change your password before continuing",
+                    "must_change_password": True,
+                }
+            ),
+            403,
+        )
+    return redirect(url_for("change_password"))
+
+
+def _block_if_password_change_required(user):
+    if user and row_to_user(user)["must_change_password"] and not password_change_exempt():
+        return _password_change_block_response()
+    return None
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         from app import get_db
 
-        if get_current_user(get_db()) is None:
+        user = get_current_user(get_db())
+        if user is None:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "Authentication required"}), 401
             return redirect(url_for("login", next=request.path))
+        blocked = _block_if_password_change_required(user)
+        if blocked is not None:
+            return blocked
         return view(*args, **kwargs)
 
     return wrapped
@@ -155,6 +193,9 @@ def admin_required(view):
         user = get_current_user(get_db())
         if user is None:
             return jsonify({"error": "Authentication required"}), 401
+        blocked = _block_if_password_change_required(user)
+        if blocked is not None:
+            return blocked
         if user["role"] != "admin":
             return jsonify({"error": "Admin access required"}), 403
         return view(*args, **kwargs)
@@ -175,6 +216,9 @@ def role_required(*roles):
                 if request.path.startswith("/api/"):
                     return jsonify({"error": "Authentication required"}), 401
                 return redirect(url_for("login", next=request.path))
+            blocked = _block_if_password_change_required(user)
+            if blocked is not None:
+                return blocked
             if user["role"] not in allowed:
                 return jsonify({"error": "Access denied"}), 403
             return view(*args, **kwargs)

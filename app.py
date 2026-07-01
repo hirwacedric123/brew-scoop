@@ -6,6 +6,13 @@ import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+except ImportError:
+    pass
+
 from flask import Flask, jsonify, redirect, render_template, request, g, url_for
 from werkzeug.security import generate_password_hash
 
@@ -13,6 +20,7 @@ from auth import (
     ROLES,
     admin_required,
     get_current_user,
+    get_user_by_id,
     get_user_by_username,
     hash_password,
     init_users_table,
@@ -239,6 +247,10 @@ def _migrate_db(db):
     user_cols = {row[1] for row in db.execute("PRAGMA table_info(users)").fetchall()}
     if "email" not in user_cols:
         db.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    if "must_change_password" not in user_cols:
+        db.execute(
+            "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _migrate_users_role_check(db):
@@ -534,9 +546,21 @@ def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
 
 @app.route("/login")
 def login():
-    if get_current_user(get_db()) is not None:
+    user = get_current_user(get_db())
+    if user is not None:
+        if row_to_user(user)["must_change_password"]:
+            return redirect(url_for("change_password"))
         return redirect(url_for("index"))
     return render_template("login.html")
+
+
+@app.route("/change-password")
+@login_required
+def change_password():
+    user = get_current_user(get_db())
+    if not row_to_user(user)["must_change_password"]:
+        return redirect(url_for("index"))
+    return render_template("change-password.html")
 
 
 @app.route("/")
@@ -566,7 +590,43 @@ def auth_login():
         return jsonify({"error": "Invalid username or password"}), 401
 
     login_user(row["id"])
-    return jsonify({"user": public_user(row)})
+    user_data = public_user(row)
+    return jsonify(
+        {
+            "user": user_data,
+            "must_change_password": user_data.get("must_change_password", False),
+        }
+    )
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@login_required
+def auth_change_password():
+    data = request.get_json(silent=True) or {}
+    current_password = data.get("current_password") or ""
+    new_password = data.get("new_password") or ""
+
+    if not current_password or not new_password:
+        return jsonify({"error": "Current and new passwords are required"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+
+    db = get_db()
+    user = get_current_user(db)
+    if not verify_password(user["password_hash"], current_password):
+        return jsonify({"error": "Current password is incorrect"}), 400
+    if current_password == new_password:
+        return jsonify({"error": "New password must be different from the current one"}), 400
+
+    ts = now_iso()
+    db.execute(
+        """UPDATE users SET password_hash=?, must_change_password=0, updated_at=?
+           WHERE id=?""",
+        (hash_password(new_password), ts, user["id"]),
+    )
+    db.commit()
+    updated = get_user_by_id(db, user["id"])
+    return jsonify({"message": "Password updated", "user": public_user(updated)})
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -613,8 +673,9 @@ def admin_create_user():
     ts = now_iso()
     cur = db.execute(
         """INSERT INTO users
-           (username, password_hash, display_name, email, role, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
+           (username, password_hash, display_name, email, role, is_active,
+            must_change_password, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)""",
         (
             data["username"].strip(),
             hash_password(data["password"]),

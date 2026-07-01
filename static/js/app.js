@@ -229,6 +229,10 @@ async function api(url, options = {}) {
     window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
     throw new Error("Session expired");
   }
+  if (res.status === 403 && data.must_change_password) {
+    window.location.href = "/change-password";
+    throw new Error("Password change required");
+  }
   if (!res.ok) throw new Error(data.error || "Something went wrong");
   return data;
 }
