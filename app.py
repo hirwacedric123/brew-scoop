@@ -28,6 +28,7 @@ from auth import (
     verify_password,
 )
 from reporting import (
+    category_breakdown as _category_breakdown,
     get_database_path,
     payment_breakdown as _payment_breakdown,
     sales_summary as _sales_summary,
@@ -1505,6 +1506,7 @@ def list_transactions():
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
     user_id = request.args.get("user_id", "").strip()
+    category = request.args.get("category", "").strip()
 
     query = """
         SELECT t.*, p.name AS product_name, p.category,
@@ -1518,6 +1520,9 @@ def list_transactions():
     if tx_type:
         query += " AND t.type = ?"
         params.append(tx_type)
+    if category:
+        query += " AND p.category = ?"
+        params.append(category)
     if date_from:
         query += " AND substr(t.created_at, 1, 10) >= ?"
         params.append(date_from)
@@ -1618,6 +1623,7 @@ def sales_report():
     summary = _sales_summary(db, date_from, date_to, user_id)
     daily = _daily_sales_breakdown(db, date_from, date_to, user_id)
     payments = _payment_breakdown(db, date_from, date_to, user_id)
+    categories = _category_breakdown(db, date_from, date_to, user_id)
 
     return jsonify({
         "from": date_from,
@@ -1627,6 +1633,7 @@ def sales_report():
         "summary": summary,
         "daily_breakdown": daily,
         "payment_breakdown": payments,
+        "category_breakdown": categories,
         "sales": [row_to_transaction(r) for r in sales_rows],
     })
 
@@ -1709,6 +1716,20 @@ def dashboard_stats():
            GROUP BY p.category ORDER BY value DESC"""
     ).fetchall()
 
+    sales_by_category_today = db.execute(
+        """SELECT p.category,
+                  COALESCE(SUM(t.total_amount), 0) AS revenue,
+                  COALESCE(SUM(t.quantity), 0) AS units,
+                  COUNT(t.id) AS transactions
+           FROM transactions t
+           JOIN products p ON p.id = t.product_id
+           WHERE t.type = 'sale'
+             AND substr(t.created_at, 1, 10) = ?
+           GROUP BY p.category
+           ORDER BY revenue DESC, p.category COLLATE NOCASE ASC""",
+        (today,),
+    ).fetchall()
+
     top_products = db.execute(
         """SELECT p.id, p.name, p.category, p.price,
                   COALESCE(SUM(t.quantity), 0) AS units_sold,
@@ -1754,6 +1775,15 @@ def dashboard_stats():
                 "value": round(c["value"], 2),
             }
             for c in category_stats
+        ],
+        "sales_by_category_today": [
+            {
+                "name": c["category"],
+                "revenue": round(c["revenue"], 2),
+                "units": c["units"],
+                "transactions": c["transactions"],
+            }
+            for c in sales_by_category_today
         ],
         "top_products": [
             {

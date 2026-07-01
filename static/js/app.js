@@ -20,6 +20,7 @@ const state = {
   cart: [],
   paymentMethod: null,
   posMode: false,
+  sellCategory: "",
   users: [],
   deleteUserId: null,
   deleteCategoryId: null,
@@ -331,6 +332,15 @@ function populateCategorySelects() {
     if (names.includes(current)) filter.value = current;
   }
 
+  const historyCategory = document.getElementById("history-category-filter");
+  if (historyCategory) {
+    const current = historyCategory.value;
+    historyCategory.innerHTML =
+      '<option value="">All Categories</option>' +
+      names.map((n) => `<option value="${escAttr(n)}">${esc(n)}</option>`).join("");
+    if (names.includes(current)) historyCategory.value = current;
+  }
+
   const productCategory = document.getElementById("product-category");
   if (productCategory) {
     const current = productCategory.value;
@@ -376,6 +386,27 @@ async function loadDashboard() {
   } catch (e) {
     toast(e.message, "error");
   }
+}
+
+function renderCategoryBars(categories, valueKey, emptyTitle, emptyMessage) {
+  if (!categories.length) {
+    return emptyState(UI_ICONS.chart, emptyTitle, emptyMessage, true);
+  }
+  const maxVal = Math.max(...categories.map((c) => c[valueKey]), 1);
+  return `<div class="category-bars">${categories
+    .map(
+      (c) => `
+      <div class="category-bar-item">
+        <div class="category-bar-header">
+          <span class="category-bar-name">${esc(c.name)}</span>
+          <span class="category-bar-meta">${fmt.format(c[valueKey])} · ${c.units ?? c.total_qty ?? 0} units</span>
+        </div>
+        <div class="category-bar-track">
+          <div class="category-bar-fill" style="width:${(c[valueKey] / maxVal) * 100}%;--bar-color:${categoryAccent(c.name)}"></div>
+        </div>
+      </div>`
+    )
+    .join("")}</div>`;
 }
 
 function renderDashboard(d) {
@@ -469,6 +500,16 @@ function renderDashboard(d) {
         )
         .join("")}</div>`
     : emptyState(UI_ICONS.box, "No products yet", "Add products to see category breakdown.", true);
+
+  const salesCategoryToday = document.getElementById("sales-category-today");
+  if (salesCategoryToday) {
+    salesCategoryToday.innerHTML = renderCategoryBars(
+      d.sales_by_category_today || [],
+      "revenue",
+      "No sales today",
+      "Category sales appear after your first sale today."
+    );
+  }
 
   const recent = document.getElementById("recent-activity");
   if (!d.recent_transactions.length) {
@@ -699,7 +740,11 @@ async function loadSellView() {
     ]);
     state.products = products;
     state.cupInventory = cups;
+    if (!state.categories.length) {
+      state.categories = await api("/api/categories");
+    }
     populateProductSelects();
+    renderSellCategoryTabs();
     renderQuickPick();
     syncCartWithStock();
     updateSellPreview();
@@ -740,14 +785,109 @@ function togglePosMode() {
   }
 }
 
+function getSellCategories() {
+  const categoryOrder = new Map(
+    state.categories.map((c, i) => [c.name.toLowerCase(), { ...c, sort_order: c.sort_order ?? i }])
+  );
+  const namesInProducts = [...new Set(state.products.map((p) => p.category))];
+  const ordered = state.categories
+    .map((c) => c.name)
+    .filter((name) => namesInProducts.some((n) => n.toLowerCase() === name.toLowerCase()));
+
+  namesInProducts.forEach((name) => {
+    if (!ordered.some((n) => n.toLowerCase() === name.toLowerCase())) {
+      ordered.push(name);
+    }
+  });
+
+  return ordered.map((name) => {
+    const meta = categoryOrder.get(name.toLowerCase());
+    return {
+      name,
+      sort_order: meta?.sort_order ?? 999,
+      uses_cup_stock: meta?.uses_cup_stock ?? false,
+      product_count: state.products.filter(
+        (p) => p.category.toLowerCase() === name.toLowerCase()
+      ).length,
+    };
+  });
+}
+
+function getSellProducts() {
+  const products = [...state.products];
+  if (state.sellCategory) {
+    const selected = state.sellCategory.toLowerCase();
+    return products.filter((p) => p.category.toLowerCase() === selected);
+  }
+  return products;
+}
+
+function selectSellCategory(categoryName) {
+  state.sellCategory = categoryName || "";
+  renderSellCategoryTabs();
+  renderQuickPick();
+  populateProductSelects();
+  updateSellPreview();
+}
+
+function renderSellCategoryTabs() {
+  const container = document.getElementById("sell-category-tabs");
+  if (!container) return;
+
+  const categories = getSellCategories();
+  const totalProducts = state.products.length;
+
+  if (!categories.length) {
+    container.innerHTML = "";
+    container.hidden = true;
+    return;
+  }
+
+  container.hidden = false;
+  const chips = [
+    {
+      name: "",
+      label: "All",
+      count: totalProducts,
+    },
+    ...categories.map((c) => ({
+      name: c.name,
+      label: c.name,
+      count: c.product_count,
+    })),
+  ];
+
+  container.innerHTML = chips
+    .map(
+      (chip) => `
+    <button type="button"
+      class="sell-category-tab ${state.sellCategory === chip.name ? "active" : ""}"
+      style="${chip.name ? `--tab-accent: ${categoryAccent(chip.name)}` : ""}"
+      onclick="selectSellCategory('${escAttr(chip.name)}')"
+      role="tab"
+      aria-selected="${state.sellCategory === chip.name}">
+      <span class="sell-category-tab-label">${esc(chip.label)}</span>
+      <span class="sell-category-tab-count">${chip.count}</span>
+    </button>`
+    )
+    .join("");
+
+  const hint = document.getElementById("sell-category-hint");
+  if (hint) {
+    hint.textContent = state.sellCategory
+      ? `${getSellProducts().length} product${getSellProducts().length !== 1 ? "s" : ""} in ${state.sellCategory}`
+      : "Tap a category, then pick a product";
+  }
+}
+
 function populateProductSelects() {
-  const inStock = state.products.filter((p) => p.quantity > 0);
+  const sellProducts = getSellProducts().filter((p) => p.quantity > 0);
   const stockProducts = state.products.filter((p) => !p.uses_cup_stock);
 
   const sellSelect = document.getElementById("sell-product");
   sellSelect.innerHTML =
     '<option value="">Choose a product...</option>' +
-    inStock
+    sellProducts
       .map((p) => {
         const stockText = p.uses_cup_stock ? `${p.quantity} cups` : `${p.quantity} in stock`;
         return `<option value="${p.id}">${esc(p.name)} — ${stockText}</option>`;
@@ -823,12 +963,23 @@ function cartQtyInCart(productId) {
 
 function renderQuickPick() {
   const grid = document.getElementById("quick-pick-grid");
+  const products = getSellProducts();
+
   if (!state.products.length) {
     grid.innerHTML = emptyState(UI_ICONS.box, "No products", "Add products to start selling.");
     return;
   }
 
-  grid.innerHTML = state.products
+  if (!products.length) {
+    grid.innerHTML = emptyState(
+      UI_ICONS.box,
+      "No products in this category",
+      state.sellCategory ? "Try another category or add products here." : "Add products to start selling."
+    );
+    return;
+  }
+
+  grid.innerHTML = products
     .map((p) => {
       const inCart = cartQtyInCart(p.id);
       const available = getAvailableUnits(p);
@@ -839,7 +990,7 @@ function renderQuickPick() {
       style="--qp-accent: ${accent}"
       ${disabled ? "disabled" : `onclick="addToCart(${p.id}, 1)"`}>
       <strong>${esc(p.name)}</strong>
-      <span>${esc(p.category)} · ${availableStockLabel({ ...p, quantity: available })}</span>
+      <span>${availableStockLabel({ ...p, quantity: available })}</span>
       <div class="qp-price">${fmt.format(p.price)}</div>
       ${inCart ? `<div class="qp-cart-badge">${inCart} in cart</div>` : ""}
     </button>`;
@@ -1780,11 +1931,13 @@ function populateSellerFilter(selectId, selected = "") {
 async function loadHistory() {
   const type = document.getElementById("history-type-filter").value;
   const sellerId = document.getElementById("history-seller-filter")?.value || "";
+  const category = document.getElementById("history-category-filter")?.value || "";
   state.historySellerId = sellerId;
 
   const params = new URLSearchParams({ limit: "100" });
   if (type) params.set("type", type);
   if (sellerId) params.set("user_id", sellerId);
+  if (category) params.set("category", category);
 
   try {
     const transactions = await api(`/api/transactions?${params}`);
@@ -1877,7 +2030,7 @@ async function loadSalesReports(from, to) {
 }
 
 function renderSalesReport(report) {
-  const { summary, daily_breakdown, payment_breakdown, sales, from, to } = report;
+  const { summary, daily_breakdown, payment_breakdown, category_breakdown, sales, from, to } = report;
 
   document.getElementById("sales-summary-stats").innerHTML = `
     ${statCard("revenue", UI_ICONS.revenue, "Total Revenue", fmt.format(summary.revenue), formatRangeLabel(from, to))}
@@ -1904,6 +2057,32 @@ function renderSalesReport(report) {
           .join("")}
       </div>
     `;
+  }
+
+  const categoryEl = document.getElementById("sales-category-breakdown");
+  if (categoryEl) {
+    const categories = category_breakdown || [];
+    if (!categories.length) {
+      categoryEl.innerHTML = "";
+    } else {
+      const maxRevenue = Math.max(...categories.map((c) => c.revenue), 1);
+      categoryEl.innerHTML = `
+        <h3 class="payment-breakdown-title">Revenue by Category</h3>
+        <div class="category-breakdown-grid">
+          ${categories
+            .map(
+              (c) => `
+            <div class="category-breakdown-card" style="--cat-accent: ${categoryAccent(c.name)}">
+              <span class="category-breakdown-label">${esc(c.name)}</span>
+              <strong class="category-breakdown-value">${fmt.format(c.revenue)}</strong>
+              <span class="category-breakdown-sub">${fmtNum.format(c.units)} units · ${fmtNum.format(c.transactions)} sale${c.transactions !== 1 ? "s" : ""}</span>
+              <div class="category-breakdown-bar" style="width:${(c.revenue / maxRevenue) * 100}%"></div>
+            </div>`
+            )
+            .join("")}
+        </div>
+      `;
+    }
   }
 
   document.getElementById("sales-range-label").textContent = formatRangeLabel(from, to);
@@ -2407,6 +2586,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("history-type-filter").addEventListener("change", loadHistory);
   document.getElementById("history-seller-filter")?.addEventListener("change", loadHistory);
+  document.getElementById("history-category-filter")?.addEventListener("change", loadHistory);
   document.getElementById("sales-seller-filter")?.addEventListener("change", () => {
     const from = document.getElementById("sales-from")?.value;
     const to = document.getElementById("sales-to")?.value;
@@ -2460,6 +2640,7 @@ window.addToCart = addToCart;
 window.updateCartItemQty = updateCartItemQty;
 window.removeFromCart = removeFromCart;
 window.selectSalesDate = selectSalesDate;
+window.selectSellCategory = selectSellCategory;
 window.openEditUser = openEditUser;
 window.openDeleteUser = openDeleteUser;
 window.openEditCategory = openEditCategory;

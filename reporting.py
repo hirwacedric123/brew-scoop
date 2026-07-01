@@ -116,6 +116,33 @@ def payment_breakdown(db, date_from, date_to, user_id=None):
     ]
 
 
+def category_breakdown(db, date_from, date_to, user_id=None):
+    user_clause, user_params = _sale_user_clause(user_id, "t")
+    rows = db.execute(
+        f"""SELECT p.category,
+                  COALESCE(SUM(t.total_amount), 0) AS revenue,
+                  COALESCE(SUM(t.quantity), 0) AS units,
+                  COUNT(t.id) AS transactions
+           FROM transactions t
+           JOIN products p ON p.id = t.product_id
+           WHERE t.type = 'sale'
+             AND substr(t.created_at, 1, 10) >= ?
+             AND substr(t.created_at, 1, 10) <= ?{user_clause}
+           GROUP BY p.category
+           ORDER BY revenue DESC, p.category COLLATE NOCASE ASC""",
+        (date_from, date_to, *user_params),
+    ).fetchall()
+    return [
+        {
+            "name": row["category"],
+            "revenue": round(row["revenue"], 2),
+            "units": row["units"],
+            "transactions": row["transactions"],
+        }
+        for row in rows
+    ]
+
+
 def seller_breakdown(db, report_date):
     rows = db.execute(
         """SELECT u.id,
@@ -258,6 +285,7 @@ def build_admin_daily_report(db, report_date):
         "report_date": report_date,
         "summary": sales_summary(db, report_date, report_date),
         "payments": payment_breakdown(db, report_date, report_date),
+        "categories": category_breakdown(db, report_date, report_date),
         "sellers": seller_breakdown(db, report_date),
         "top_products": top_products_for_day(db, report_date),
         "low_stock": low_stock_items(db),
@@ -270,6 +298,7 @@ def build_seller_daily_report(db, user_id, display_name, report_date):
         "seller_name": display_name,
         "summary": sales_summary(db, report_date, report_date, user_id=user_id),
         "payments": payment_breakdown(db, report_date, report_date, user_id=user_id),
+        "categories": category_breakdown(db, report_date, report_date, user_id=user_id),
         "top_products": top_products_for_day(db, report_date, user_id=user_id),
         "shifts": seller_shifts_for_day(db, user_id, report_date),
     }
@@ -372,6 +401,17 @@ def render_admin_report_html(report):
     ]
     body += _section("Payment breakdown", _table(["Method", "Revenue", "Checkouts"], payment_rows))
 
+    category_rows = [
+        (
+            escape(c["name"]),
+            format_currency(c["revenue"]),
+            str(c["units"]),
+            str(c["transactions"]),
+        )
+        for c in report.get("categories", [])
+    ]
+    body += _section("Sales by category", _table(["Category", "Revenue", "Units", "Sales"], category_rows))
+
     seller_rows = [
         (
             escape(s["display_name"]),
@@ -419,6 +459,12 @@ def render_admin_report_text(report):
     ]
     for p in report["payments"]:
         lines.append(f"  {p['label']}: {format_currency(p['revenue'])} ({p['checkouts']} checkouts)")
+    lines.extend(["", "Sales by category:"])
+    for c in report.get("categories", []):
+        lines.append(
+            f"  {c['name']}: {format_currency(c['revenue'])}, "
+            f"{c['units']} units, {c['transactions']} sales"
+        )
     lines.extend(["", "Seller performance:"])
     for s in report["sellers"]:
         if s["transactions"] > 0:
@@ -444,6 +490,17 @@ def render_seller_report_html(report):
         for p in report["payments"]
     ]
     body += _section("Payment breakdown", _table(["Method", "Revenue", "Checkouts"], payment_rows))
+
+    category_rows = [
+        (
+            escape(c["name"]),
+            format_currency(c["revenue"]),
+            str(c["units"]),
+            str(c["transactions"]),
+        )
+        for c in report.get("categories", [])
+    ]
+    body += _section("Your sales by category", _table(["Category", "Revenue", "Units", "Sales"], category_rows))
 
     product_rows = [
         (escape(p["name"]), str(p["units"]), format_currency(p["revenue"]))

@@ -164,6 +164,19 @@
             <div class="card-body card-body-flush" id="top-products-list"></div>
           </div>
 
+          <div class="card dashboard-card">
+            <div class="card-header">
+              <div class="card-title-group">
+                <span class="card-title-icon card-title-icon-caramel">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                </span>
+                <h3>Sales by Category</h3>
+              </div>
+              <span class="text-muted">Today</span>
+            </div>
+            <div class="card-body" id="sales-category-today"></div>
+          </div>
+
           <div class="card dashboard-card card-wide">
             <div class="card-header">
               <div class="card-title-group">
@@ -276,9 +289,10 @@
             <div class="card">
               <div class="card-header">
                 <h3>Quick Pick</h3>
-                <span class="text-muted">Tap to add to cart</span>
+                <span class="text-muted" id="sell-category-hint">Tap a category, then pick a product</span>
               </div>
               <div class="card-body">
+                <div class="sell-category-tabs" id="sell-category-tabs" role="tablist" aria-label="Product categories"></div>
                 <div class="quick-pick-grid" id="quick-pick-grid"></div>
               </div>
             </div>
@@ -760,6 +774,9 @@
           <select id="history-seller-filter" aria-label="Filter by seller">
             <option value="">All Sellers</option>
           </select>
+          <select id="history-category-filter" aria-label="Filter by category">
+            <option value="">All Categories</option>
+          </select>
         </div>
 
         <div class="table-wrap table-premium">
@@ -818,6 +835,8 @@
         <div class="stats-grid" id="sales-summary-stats"></div>
 
         <div class="payment-breakdown" id="sales-payment-breakdown"></div>
+
+        <div class="category-breakdown-section" id="sales-category-breakdown"></div>
 
         <div class="sales-layout">
           <div class="card">

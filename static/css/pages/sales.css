@@ -89,6 +89,68 @@
   background: linear-gradient(135deg, rgba(227, 242, 253, 0.6), white);
 }
 
+.category-breakdown-section {
+  margin-bottom: 1.35rem;
+}
+
+.category-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.category-breakdown-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.category-breakdown-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--cat-accent, var(--caramel));
+  opacity: 0.85;
+}
+
+.category-breakdown-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.category-breakdown-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--espresso);
+}
+
+.category-breakdown-sub {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.category-breakdown-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--cat-accent, var(--caramel));
+  opacity: 0.35;
+  border-radius: 0 2px 2px 0;
+}
+
 .period-btn {
   padding: 0.52rem 1.1rem;
   border: 1px solid var(--border-subtle);
