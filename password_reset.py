@@ -109,12 +109,23 @@ def mark_reset_token_used(db, token_id):
     )
 
 
-def send_password_reset_email(to_email, display_name, reset_url):
+def send_password_reset_email(to_email, display_name, username, reset_url):
     hours = reset_expiry_hours()
     subject = "Reset your Brew & Scoop password"
     body = f"""
       <p>Hi {escape(display_name)},</p>
       <p>We received a request to reset your Brew &amp; Scoop password.</p>
+      <div style="background:#faf7f2;border:1px solid #ece3d8;border-radius:10px;padding:16px;margin:20px 0;">
+        <div style="font-size:12px;color:#7a6a5c;text-transform:uppercase;letter-spacing:0.04em;">
+          Your sign-in username
+        </div>
+        <div style="font-size:20px;font-weight:bold;margin-top:8px;color:#2b2118;font-family:monospace;">
+          {escape(username)}
+        </div>
+        <p style="margin:10px 0 0;font-size:13px;color:#7a6a5c;">
+          Use this username when signing in after you reset your password.
+        </p>
+      </div>
       <p style="margin:24px 0;">
         <a href="{escape(reset_url)}"
            style="display:inline-block;background:#5c3d2e;color:#ffffff;text-decoration:none;
@@ -127,7 +138,7 @@ def send_password_reset_email(to_email, display_name, reset_url):
         If you did not request this, you can ignore this email.
       </p>
       <p style="color:#7a6a5c;font-size:13px;word-break:break-all;">
-        Or copy this link: {escape(reset_url)}
+        Or copy this reset link: {escape(reset_url)}
       </p>
     """
     html = _email_shell(subject, body).replace(
@@ -136,6 +147,9 @@ def send_password_reset_email(to_email, display_name, reset_url):
     )
     text = (
         f"Hi {display_name},\n\n"
+        f"We received a request to reset your Brew & Scoop password.\n\n"
+        f"Your sign-in username: {username}\n"
+        f"Use this username when signing in after you reset your password.\n\n"
         f"Reset your password: {reset_url}\n\n"
         f"This link expires in {hours} hours.\n"
         "If you did not request this, ignore this email."
@@ -150,5 +164,10 @@ def request_password_reset(db, email):
 
     token = create_password_reset_token(db, user["id"])
     reset_url = f"{app_base_url()}/reset-password?token={token}"
-    send_password_reset_email(user["email"].strip(), user["display_name"], reset_url)
+    send_password_reset_email(
+        user["email"].strip(),
+        user["display_name"],
+        user["username"],
+        reset_url,
+    )
     db.commit()
