@@ -35,6 +35,12 @@ from auth import (
     validate_user_payload,
     verify_password,
 )
+from password_reset import (
+    find_valid_reset_token,
+    init_password_reset_table,
+    mark_reset_token_used,
+    request_password_reset,
+)
 from reporting import (
     category_breakdown as _category_breakdown,
     get_database_path,
@@ -127,6 +133,7 @@ def init_db():
     _migrate_db(db)
     _seed_categories(db)
     init_users_table(db)
+    init_password_reset_table(db)
     _seed_default_admin(db)
     db.commit()
     db.close()
@@ -251,6 +258,8 @@ def _migrate_db(db):
         db.execute(
             "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
         )
+
+    init_password_reset_table(db)
 
 
 def _migrate_users_role_check(db):
@@ -554,6 +563,23 @@ def login():
     return render_template("login.html")
 
 
+@app.route("/forgot-password")
+def forgot_password_page():
+    if get_current_user(get_db()) is not None:
+        return redirect(url_for("index"))
+    return render_template("forgot-password.html")
+
+
+@app.route("/reset-password")
+def reset_password_page():
+    if get_current_user(get_db()) is not None:
+        return redirect(url_for("index"))
+    token = (request.args.get("token") or "").strip()
+    if not token or not find_valid_reset_token(get_db(), token):
+        return render_template("reset-password.html", token_valid=False, token="")
+    return render_template("reset-password.html", token_valid=True, token=token)
+
+
 @app.route("/change-password")
 @login_required
 def change_password():
@@ -627,6 +653,63 @@ def auth_change_password():
     db.commit()
     updated = get_user_by_id(db, user["id"])
     return jsonify({"message": "Password updated", "user": public_user(updated)})
+
+
+@app.route("/api/auth/forgot-password", methods=["POST"])
+def auth_forgot_password():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip()
+    email_error = validate_email(email)
+    if email_error:
+        return jsonify({"error": email_error}), 400
+
+    db = get_db()
+    try:
+        request_password_reset(db, email)
+    except Exception:
+        db.rollback()
+        app.logger.exception("Password reset email failed for %s", email)
+        return jsonify({"error": "Could not send reset email. Check SMTP settings."}), 503
+
+    return jsonify(
+        {
+            "message": (
+                "If an account exists with that email, "
+                "you will receive a password reset link shortly."
+            )
+        }
+    )
+
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+def auth_reset_password():
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("new_password") or ""
+
+    if not token or not new_password:
+        return jsonify({"error": "Token and new password are required"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters"}), 400
+
+    db = get_db()
+    reset_row = find_valid_reset_token(db, token)
+    if not reset_row:
+        return jsonify({"error": "This reset link is invalid or has expired"}), 400
+
+    user = get_user_by_id(db, reset_row["user_id"])
+    if not user or not user["is_active"]:
+        return jsonify({"error": "This reset link is invalid or has expired"}), 400
+
+    ts = now_iso()
+    db.execute(
+        """UPDATE users SET password_hash=?, must_change_password=0, updated_at=?
+           WHERE id=?""",
+        (hash_password(new_password), ts, user["id"]),
+    )
+    mark_reset_token_used(db, reset_row["id"])
+    db.commit()
+    return jsonify({"message": "Password reset. You can sign in with your new password."})
 
 
 @app.route("/api/auth/logout", methods=["POST"])
