@@ -26,6 +26,7 @@ const state = {
   paymentMethod: null,
   posMode: false,
   sellCategory: "",
+  sellSearch: "",
   keepSellCategory: false,
   users: [],
   deleteUserId: null,
@@ -932,6 +933,9 @@ function selectSellCategory(categoryName) {
 
 function backToSellCategories() {
   state.sellCategory = "";
+  state.sellSearch = "";
+  const searchInput = document.getElementById("sell-search");
+  if (searchInput) searchInput.value = "";
   renderSellBrowse();
   populateProductSelects();
   updateSellPreview();
@@ -945,11 +949,13 @@ function renderSellBrowse() {
   const title = document.getElementById("sell-pick-title");
   const hint = document.getElementById("sell-category-hint");
   const pickCard = document.querySelector(".sell-pick-card");
+  const searchWrap = document.getElementById("sell-search-wrap");
 
   if (backBtn) backBtn.hidden = !inCategory;
   if (categoryGrid) categoryGrid.hidden = inCategory;
   if (productGrid) productGrid.hidden = !inCategory;
   if (pickCard) pickCard.classList.toggle("sell-pick-in-category", inCategory);
+  if (searchWrap) searchWrap.hidden = !inCategory;
 
   if (title) {
     title.textContent = inCategory ? state.sellCategory : "Quick Pick";
@@ -1102,7 +1108,7 @@ function cartQtyInCart(productId) {
 
 function renderQuickPick() {
   const grid = document.getElementById("quick-pick-grid");
-  const products = getSellProducts();
+  let products = getSellProducts();
 
   if (!state.products.length) {
     grid.innerHTML = emptyState(UI_ICONS.box, "No products", "Add products to start selling.");
@@ -1118,6 +1124,21 @@ function renderQuickPick() {
     return;
   }
 
+  const query = (state.sellSearch || "").trim().toLowerCase();
+  if (query) {
+    products = products.filter((p) => p.name.toLowerCase().includes(query));
+  }
+
+  if (!products.length) {
+    grid.innerHTML = `
+      <div class="sell-no-results">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <strong>No results for "${esc(state.sellSearch)}"</strong>
+        <p>Try a different name or clear the search.</p>
+      </div>`;
+    return;
+  }
+
   grid.innerHTML = products
     .map((p) => {
       const inCart = cartQtyInCart(p.id);
@@ -1130,13 +1151,17 @@ function renderQuickPick() {
     <button type="button" class="quick-pick-item ${disabled ? "out-of-stock" : ""} ${inCart ? "in-cart" : ""}"
       style="--qp-accent: ${accent}"
       ${disabled ? "disabled" : `onclick="addToCart(${p.id}, 1)"`}>
-      <div class="qp-item-top">
-        <div class="qp-avatar">${esc(productInitials(p.name))}</div>
-        ${inCart ? `<span class="qp-cart-badge">${inCart}</span>` : ""}
+      <div class="qp-item-body">
+        <div class="qp-item-top">
+          <div class="qp-avatar">${esc(productInitials(p.name))}</div>
+          ${inCart ? `<span class="qp-cart-badge">${inCart}</span>` : ""}
+        </div>
+        <strong>${esc(p.name)}</strong>
+        <span class="qp-stock ${stockClass}">${availableStockLabel({ ...p, quantity: available })}</span>
       </div>
-      <strong>${esc(p.name)}</strong>
-      <span class="qp-stock ${stockClass}">${availableStockLabel({ ...p, quantity: available })}</span>
-      <div class="qp-price">${fmt.format(p.price)}</div>
+      <div class="qp-item-footer">
+        <div class="qp-price">${fmt.format(p.price)}</div>
+      </div>
     </button>`;
     })
     .join("");
@@ -3089,6 +3114,11 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btn-pos-mode")?.addEventListener("click", togglePosMode);
+
+  document.getElementById("sell-search")?.addEventListener("input", (e) => {
+    state.sellSearch = e.target.value;
+    renderQuickPick();
+  });
 
   document.getElementById("sell-product").addEventListener("change", updateSellPreview);
   document.getElementById("qty-minus").addEventListener("click", () => adjustQty(-1));

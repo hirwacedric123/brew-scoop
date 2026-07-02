@@ -1088,15 +1088,23 @@
   margin-bottom: 1rem;
   padding: 1rem 1.25rem;
   border-radius: var(--radius);
-  border: 1px solid rgba(212, 160, 60, 0.35);
-  background: linear-gradient(135deg, #fffbf3, #fff8ef);
-  box-shadow: var(--shadow-xs);
+  border: 1px solid rgba(212, 160, 60, 0.38);
+  border-left: 4px solid var(--amber);
+  background: linear-gradient(135deg, #fffcee, #fff8e0);
+  box-shadow: 0 2px 12px rgba(212, 160, 60, 0.1), var(--shadow-xs);
+}
+
+.shift-banner strong {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #7a5a10;
 }
 
 .shift-banner p {
-  margin: 0.25rem 0 0;
-  font-size: 0.88rem;
-  color: var(--text-muted);
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  color: #a08040;
 }
 
 .sell-locked {

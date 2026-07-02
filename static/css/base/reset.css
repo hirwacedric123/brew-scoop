@@ -6,6 +6,11 @@
   padding: 0;
 }
 
+/* Ensure [hidden] attribute always wins regardless of display overrides */
+[hidden] {
+  display: none !important;
+}
+
 html {
   font-size: 15px;
   scroll-behavior: smooth;

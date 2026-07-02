@@ -348,13 +348,36 @@
     justify-content: center;
   }
 
+  .sell-layout {
+    gap: 1.25rem;
+  }
+
   .sell-category-grid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 0.65rem;
+    grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .sell-search-wrap {
+    max-width: none;
+    flex: 1 1 100%;
+    order: 3;
+  }
+
+  .sell-pick-header {
+    gap: 0.6rem;
+  }
+
+  .sell-pick-card .card-body {
+    padding: 0.85rem 1.1rem 1.1rem;
   }
 
   .quick-pick-grid {
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+    gap: 0.75rem;
+  }
+
+  .quick-pick-item {
+    min-height: 135px;
   }
 
   #view-sell.pos-mode .quick-pick-grid {
@@ -425,8 +448,21 @@
     grid-template-columns: 1fr;
   }
 
+  .sell-pick-card .card-body {
+    padding: 0.75rem 0.85rem 0.85rem;
+  }
+
   .quick-pick-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 0.65rem;
+  }
+
+  .qp-item-body {
+    padding: 0.85rem 0.85rem 0.7rem;
+  }
+
+  .qp-item-footer {
+    padding: 0.55rem 0.85rem 0.75rem;
   }
 
   .qty-presets {
