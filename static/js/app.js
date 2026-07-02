@@ -26,6 +26,7 @@ const state = {
   paymentMethod: null,
   posMode: false,
   sellCategory: "",
+  keepSellCategory: false,
   users: [],
   deleteUserId: null,
   deleteCategoryId: null,
@@ -216,6 +217,38 @@ function categoryAccent(name) {
   return palette[Math.abs(hash) % palette.length];
 }
 
+const CATEGORY_ICONS = [
+  { match: /hot|coffee|tea|espresso|latte|cappuccino/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M17 8h1a4 4 0 0 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>` },
+  { match: /ice.?cream|gelato|scoop|frozen/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3c2 3 4 5.5 4 8.5a4 4 0 0 1-8 0C8 8.5 10 6 12 3z"/><path d="M8 21h8"/><path d="M9 17h6"/></svg>` },
+  { match: /cold|smoothie|juice|iced/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 2h8l-1 9H9L8 2z"/><path d="M12 11v6"/><path d="M8 21h8"/><path d="M10 17h4"/></svg>` },
+  { match: /snack|pastry|cake|cookie|bread/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 14a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2z"/><path d="M8 10V8a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>` },
+  { match: /soft.?drink|soda|fizzy|cola/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M9 2h6l1 7H8L9 2z"/><path d="M8 9h8v10a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V9z"/><path d="M10 5h4"/></svg>` },
+  { match: /add.?on|extra|topping|syrup/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>` },
+  { match: /cup|shared/i, icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h12v5a6 6 0 0 1-12 0V3z"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>` },
+];
+
+function categoryIcon(name) {
+  const match = CATEGORY_ICONS.find((entry) => entry.match.test(name));
+  return match ? match.icon : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`;
+}
+
+function cartQtyInCategory(categoryName) {
+  const key = categoryName.toLowerCase();
+  return state.cart.reduce((total, item) => {
+    if (item.category.toLowerCase() === key) return total + item.quantity;
+    return total;
+  }, 0);
+}
+
+function getCategoryPriceRange(categoryName) {
+  const products = state.products.filter((p) => p.category.toLowerCase() === categoryName.toLowerCase());
+  if (!products.length) return null;
+  const prices = products.map((p) => p.price);
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return min === max ? fmt.format(min) : `${fmt.format(min)} – ${fmt.format(max)}`;
+}
+
 // ── API ────────────────────────────────────────────────────────────────────
 
 async function api(url, options = {}) {
@@ -305,7 +338,11 @@ function switchView(viewId) {
 
   if (viewId === "dashboard") loadDashboard();
   if (viewId === "products") loadProducts();
-  if (viewId === "sell") loadSellView();
+  if (viewId === "sell") {
+    if (!state.keepSellCategory) state.sellCategory = "";
+    state.keepSellCategory = false;
+    loadSellView();
+  }
   if (viewId === "restock") loadRestockView();
   if (viewId === "history") {
     if (isSeller()) loadCategories();
@@ -808,8 +845,7 @@ async function loadSellView() {
       state.categories = await api("/api/categories");
     }
     populateProductSelects();
-    renderSellCategoryTabs();
-    renderQuickPick();
+    renderSellBrowse();
     syncCartWithStock();
     updateSellPreview();
     renderCart();
@@ -889,60 +925,98 @@ function getSellProducts() {
 
 function selectSellCategory(categoryName) {
   state.sellCategory = categoryName || "";
-  renderSellCategoryTabs();
-  renderQuickPick();
+  renderSellBrowse();
   populateProductSelects();
   updateSellPreview();
 }
 
-function renderSellCategoryTabs() {
-  const container = document.getElementById("sell-category-tabs");
-  if (!container) return;
+function backToSellCategories() {
+  state.sellCategory = "";
+  renderSellBrowse();
+  populateProductSelects();
+  updateSellPreview();
+}
+
+function renderSellBrowse() {
+  const inCategory = Boolean(state.sellCategory);
+  const categoryGrid = document.getElementById("sell-category-grid");
+  const productGrid = document.getElementById("quick-pick-grid");
+  const backBtn = document.getElementById("sell-back-btn");
+  const title = document.getElementById("sell-pick-title");
+  const hint = document.getElementById("sell-category-hint");
+  const pickCard = document.querySelector(".sell-pick-card");
+
+  if (backBtn) backBtn.hidden = !inCategory;
+  if (categoryGrid) categoryGrid.hidden = inCategory;
+  if (productGrid) productGrid.hidden = !inCategory;
+  if (pickCard) pickCard.classList.toggle("sell-pick-in-category", inCategory);
+
+  if (title) {
+    title.textContent = inCategory ? state.sellCategory : "Quick Pick";
+  }
+
+  if (hint) {
+    if (inCategory) {
+      const count = getSellProducts().length;
+      hint.textContent = `${count} product${count !== 1 ? "s" : ""} · tap to add to cart`;
+    } else {
+      hint.textContent = "Choose a category to browse products";
+    }
+  }
+
+  if (inCategory) {
+    renderQuickPick();
+  } else {
+    renderSellCategories();
+  }
+}
+
+function renderSellCategories() {
+  const grid = document.getElementById("sell-category-grid");
+  if (!grid) return;
 
   const categories = getSellCategories();
-  const totalProducts = state.products.length;
 
-  if (!categories.length) {
-    container.innerHTML = "";
-    container.hidden = true;
+  if (!state.products.length) {
+    grid.innerHTML = emptyState(UI_ICONS.box, "No products", "Add products to start selling.");
     return;
   }
 
-  container.hidden = false;
-  const chips = [
-    {
-      name: "",
-      label: "All",
-      count: totalProducts,
-    },
-    ...categories.map((c) => ({
-      name: c.name,
-      label: c.name,
-      count: c.product_count,
-    })),
-  ];
-
-  container.innerHTML = chips
-    .map(
-      (chip) => `
-    <button type="button"
-      class="sell-category-tab ${state.sellCategory === chip.name ? "active" : ""}"
-      style="${chip.name ? `--tab-accent: ${categoryAccent(chip.name)}` : ""}"
-      onclick="selectSellCategory('${escAttr(chip.name)}')"
-      role="tab"
-      aria-selected="${state.sellCategory === chip.name}">
-      <span class="sell-category-tab-label">${esc(chip.label)}</span>
-      <span class="sell-category-tab-count">${chip.count}</span>
-    </button>`
-    )
-    .join("");
-
-  const hint = document.getElementById("sell-category-hint");
-  if (hint) {
-    hint.textContent = state.sellCategory
-      ? `${getSellProducts().length} product${getSellProducts().length !== 1 ? "s" : ""} in ${state.sellCategory}`
-      : "Tap a category, then pick a product";
+  if (!categories.length) {
+    grid.innerHTML = emptyState(UI_ICONS.box, "No categories", "Add products with categories to get started.");
+    return;
   }
+
+  grid.innerHTML = categories
+    .map((category) => {
+      const accent = categoryAccent(category.name);
+      const inCart = cartQtyInCategory(category.name);
+      const priceRange = getCategoryPriceRange(category.name);
+      const inStock = state.products.filter(
+        (p) => p.category.toLowerCase() === category.name.toLowerCase() && p.quantity > 0
+      ).length;
+
+      return `
+    <button type="button" class="sell-category-card"
+      style="--cat-accent: ${accent}"
+      onclick="selectSellCategory('${escAttr(category.name)}')"
+      role="listitem">
+      <div class="sell-category-card-icon">${categoryIcon(category.name)}</div>
+      <div class="sell-category-card-body">
+        <strong>${esc(category.name)}</strong>
+        <span class="sell-category-card-meta">
+          ${category.product_count} item${category.product_count !== 1 ? "s" : ""}
+          ${inStock < category.product_count ? ` · ${inStock} in stock` : ""}
+        </span>
+        ${priceRange ? `<span class="sell-category-card-price">${priceRange}</span>` : ""}
+      </div>
+      ${inCart ? `<span class="sell-category-cart-badge">${inCart} in cart</span>` : ""}
+      <span class="sell-category-card-arrow" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+      </span>
+    </button>`;
+    })
+    .join("");
 }
 
 function populateProductSelects() {
@@ -1039,7 +1113,7 @@ function renderQuickPick() {
     grid.innerHTML = emptyState(
       UI_ICONS.box,
       "No products in this category",
-      state.sellCategory ? "Try another category or add products here." : "Add products to start selling."
+      "Try another category or add products here."
     );
     return;
   }
@@ -1050,14 +1124,19 @@ function renderQuickPick() {
       const available = getAvailableUnits(p);
       const disabled = p.quantity <= 0 || available <= 0;
       const accent = categoryAccent(p.category);
+      const stockClass =
+        available <= 0 ? "stock-out" : available <= (p.reorder_level || 5) ? "stock-low" : "stock-ok";
       return `
     <button type="button" class="quick-pick-item ${disabled ? "out-of-stock" : ""} ${inCart ? "in-cart" : ""}"
       style="--qp-accent: ${accent}"
       ${disabled ? "disabled" : `onclick="addToCart(${p.id}, 1)"`}>
+      <div class="qp-item-top">
+        <div class="qp-avatar">${esc(productInitials(p.name))}</div>
+        ${inCart ? `<span class="qp-cart-badge">${inCart}</span>` : ""}
+      </div>
       <strong>${esc(p.name)}</strong>
-      <span>${availableStockLabel({ ...p, quantity: available })}</span>
+      <span class="qp-stock ${stockClass}">${availableStockLabel({ ...p, quantity: available })}</span>
       <div class="qp-price">${fmt.format(p.price)}</div>
-      ${inCart ? `<div class="qp-cart-badge">${inCart} in cart</div>` : ""}
     </button>`;
     })
     .join("");
@@ -1137,7 +1216,7 @@ function addToCart(productId, qty = null) {
   }
 
   renderCart();
-  renderQuickPick();
+  renderSellBrowse();
   updateSellPreview();
   toast(`Added ${product.name}`);
 }
@@ -1155,14 +1234,14 @@ function updateCartItemQty(productId, quantity) {
   quantity = Math.min(quantity, product.quantity);
   item.quantity = quantity;
   renderCart();
-  renderQuickPick();
+  renderSellBrowse();
   updateSellPreview();
 }
 
 function removeFromCart(productId) {
   state.cart = state.cart.filter((c) => c.product_id !== productId);
   renderCart();
-  renderQuickPick();
+  renderSellBrowse();
   updateSellPreview();
 }
 
@@ -1174,7 +1253,7 @@ function clearCart() {
   document.getElementById("sell-quantity").value = "1";
   document.getElementById("sell-preview").hidden = true;
   renderCart();
-  renderQuickPick();
+  renderSellBrowse();
 }
 
 function getCartTotal() {
@@ -1304,6 +1383,11 @@ async function completeCheckout() {
 }
 
 function quickSell(id) {
+  const product = state.products.find((p) => p.id === id);
+  if (product) {
+    state.sellCategory = product.category;
+    state.keepSellCategory = true;
+  }
   switchView("sell");
   setTimeout(() => addToCart(id, 1), 100);
 }

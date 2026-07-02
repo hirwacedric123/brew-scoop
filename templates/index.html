@@ -294,14 +294,21 @@
 
         <div class="sell-layout" id="sell-layout">
           <div class="sell-main">
-            <div class="card">
-              <div class="card-header">
-                <h3>Quick Pick</h3>
-                <span class="text-muted" id="sell-category-hint">Tap a category, then pick a product</span>
+            <div class="card sell-pick-card">
+              <div class="card-header sell-pick-header">
+                <div class="sell-pick-heading">
+                  <button type="button" class="sell-back-btn" id="sell-back-btn" hidden onclick="backToSellCategories()" aria-label="Back to categories">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+                  </button>
+                  <div>
+                    <h3 id="sell-pick-title">Quick Pick</h3>
+                    <span class="text-muted" id="sell-category-hint">Choose a category to browse products</span>
+                  </div>
+                </div>
               </div>
-              <div class="card-body">
-                <div class="sell-category-tabs" id="sell-category-tabs" role="tablist" aria-label="Product categories"></div>
-                <div class="quick-pick-grid" id="quick-pick-grid"></div>
+              <div class="card-body sell-pick-body">
+                <div class="sell-category-grid" id="sell-category-grid" role="list" aria-label="Product categories"></div>
+                <div class="quick-pick-grid" id="quick-pick-grid" hidden></div>
               </div>
             </div>
 

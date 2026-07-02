@@ -348,6 +348,11 @@
     justify-content: center;
   }
 
+  .sell-category-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.65rem;
+  }
+
   .quick-pick-grid {
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   }
@@ -414,6 +419,10 @@
 
   .period-btn {
     flex: 1 1 100%;
+  }
+
+  .sell-category-grid {
+    grid-template-columns: 1fr;
   }
 
   .quick-pick-grid {
