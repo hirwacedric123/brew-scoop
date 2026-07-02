@@ -46,6 +46,87 @@ const VIEW_TITLES = {
   reconcile: "My Shift",
 };
 
+/* ── UI State Persistence ────────────────────────────────────────────────── */
+
+const UI_STORAGE_KEY = "brew_scoop_ui_v1";
+
+function saveUIState() {
+  try {
+    const activeView =
+      document.querySelector(".view.active")?.id?.replace("view-", "") || "";
+    localStorage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({
+        cart: state.cart,
+        paymentMethod: state.paymentMethod,
+        posMode: state.posMode,
+        activeView,
+        sellCategory: state.sellCategory,
+        salesPreset: state.salesPreset,
+        salesReportMode: state.salesReportMode,
+        salesFrom: state.salesFrom,
+        salesTo: state.salesTo,
+        historyShiftPreset: state.historyShiftPreset,
+        historySellerId: state.historySellerId,
+        salesSellerId: state.salesSellerId,
+      })
+    );
+  } catch (_) {
+    // Ignore storage errors (private mode, quota exceeded, etc.)
+  }
+}
+
+function restoreUIState() {
+  try {
+    const raw = localStorage.getItem(UI_STORAGE_KEY);
+    if (!raw) return null;
+    const saved = JSON.parse(raw);
+
+    if (Array.isArray(saved.cart) && saved.cart.length)
+      state.cart = saved.cart;
+    if (saved.paymentMethod) state.paymentMethod = saved.paymentMethod;
+    if (typeof saved.posMode === "boolean") state.posMode = saved.posMode;
+    if (saved.sellCategory) {
+      state.sellCategory = saved.sellCategory;
+      state.keepSellCategory = true;
+    }
+    if (saved.salesPreset) state.salesPreset = saved.salesPreset;
+    if (saved.salesReportMode) state.salesReportMode = saved.salesReportMode;
+    if (saved.salesFrom) state.salesFrom = saved.salesFrom;
+    if (saved.salesTo) state.salesTo = saved.salesTo;
+    if (saved.historyShiftPreset)
+      state.historyShiftPreset = saved.historyShiftPreset;
+    if (saved.historySellerId) state.historySellerId = saved.historySellerId;
+    if (saved.salesSellerId) state.salesSellerId = saved.salesSellerId;
+
+    return saved.activeView || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function applyRestoredPosMode() {
+  if (!state.posMode) return;
+  document.getElementById("view-sell")?.classList.add("pos-mode");
+  document.getElementById("btn-pos-mode")?.classList.add("active");
+  const posBar = document.getElementById("pos-bar");
+  if (posBar) posBar.hidden = false;
+  const subtitle = document.getElementById("sell-subtitle");
+  if (subtitle)
+    subtitle.textContent =
+      "Counter mode — larger tiles and keyboard shortcuts";
+}
+
+function applyRestoredPaymentMethod() {
+  if (!state.paymentMethod) return;
+  document.querySelectorAll(".payment-chip").forEach((chip) => {
+    chip.classList.toggle(
+      "active",
+      chip.dataset.method === state.paymentMethod
+    );
+  });
+}
+
 function isSeller() {
   return state.currentUser?.role === "seller";
 }
@@ -146,6 +227,7 @@ function initPaymentMethods() {
       document.querySelectorAll(".payment-chip").forEach((c) => c.classList.remove("active"));
       chip.classList.add("active");
       state.paymentMethod = chip.dataset.method;
+      saveUIState();
     });
   });
 }
@@ -356,6 +438,8 @@ function switchView(viewId) {
   }
   if (viewId === "admin") loadAdminView();
   if (viewId === "reconcile") loadReconcileView();
+
+  saveUIState();
 }
 
 function switchAdminTab(tabId) {
@@ -885,6 +969,7 @@ function togglePosMode() {
       ? "Counter mode — larger tiles and keyboard shortcuts"
       : "Add items to the cart, then complete checkout in one step";
   }
+  saveUIState();
 }
 
 function getSellCategories() {
@@ -929,6 +1014,7 @@ function selectSellCategory(categoryName) {
   renderSellBrowse();
   populateProductSelects();
   updateSellPreview();
+  saveUIState();
 }
 
 function backToSellCategories() {
@@ -939,6 +1025,7 @@ function backToSellCategories() {
   renderSellBrowse();
   populateProductSelects();
   updateSellPreview();
+  saveUIState();
 }
 
 function renderSellBrowse() {
@@ -1244,6 +1331,7 @@ function addToCart(productId, qty = null) {
   renderSellBrowse();
   updateSellPreview();
   toast(`Added ${product.name}`);
+  saveUIState();
 }
 
 function updateCartItemQty(productId, quantity) {
@@ -1261,6 +1349,7 @@ function updateCartItemQty(productId, quantity) {
   renderCart();
   renderSellBrowse();
   updateSellPreview();
+  saveUIState();
 }
 
 function removeFromCart(productId) {
@@ -1268,6 +1357,7 @@ function removeFromCart(productId) {
   renderCart();
   renderSellBrowse();
   updateSellPreview();
+  saveUIState();
 }
 
 function clearCart() {
@@ -1279,6 +1369,7 @@ function clearCart() {
   document.getElementById("sell-preview").hidden = true;
   renderCart();
   renderSellBrowse();
+  saveUIState();
 }
 
 function getCartTotal() {
@@ -3040,6 +3131,9 @@ function hideModal(id) {
 // ── Init ───────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Restore persisted state before any rendering so cart/posMode/etc are ready
+  const savedActiveView = restoreUIState();
+
   const dateEl = document.getElementById("current-date");
   if (dateEl) {
     dateEl.innerHTML = `${UI_ICONS.calendar}<span>${new Date().toLocaleDateString("en-RW", {
@@ -3056,17 +3150,36 @@ document.addEventListener("DOMContentLoaded", () => {
   initPosShortcuts();
   initShiftPresets();
 
+  // Apply persisted posMode before any view renders
+  applyRestoredPosMode();
+
   if (isSeller()) {
     configureSellerReportsUi();
     loadCategories().then(() => {
       refreshSellerShift().then(() => {
-        loadSellView();
-        updateSellerNavUi();
+        loadSellView().then(() => {
+          updateSellerNavUi();
+          applyRestoredPaymentMethod();
+          // Navigate away from default sell view if user was on a different page
+          if (savedActiveView && savedActiveView !== "sell" && canAccessView(savedActiveView)) {
+            switchView(savedActiveView);
+          }
+        });
       });
     });
   } else {
-    loadCategories().then(() => loadDashboard());
+    loadCategories()
+      .then(() => loadDashboard())
+      .then(() => {
+        applyRestoredPaymentMethod();
+        // Navigate away from default dashboard if user was on a different page
+        if (savedActiveView && savedActiveView !== "dashboard" && canAccessView(savedActiveView)) {
+          switchView(savedActiveView);
+        }
+      });
   }
+
+  window.addEventListener("beforeunload", saveUIState);
 
   document.getElementById("btn-quick-add-product")?.addEventListener("click", () => {
     switchView("products");
