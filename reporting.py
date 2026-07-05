@@ -71,6 +71,10 @@ def _sale_user_clause(user_id, alias=""):
     return f" AND {prefix}user_id = ?", [uid]
 
 
+NOT_VOIDED = " AND voided_at IS NULL"
+NOT_VOIDED_T = " AND t.voided_at IS NULL"
+
+
 def sales_summary(db, date_from, date_to, user_id=None):
     user_clause, user_params = _sale_user_clause(user_id)
     row = db.execute(
@@ -78,7 +82,7 @@ def sales_summary(db, date_from, date_to, user_id=None):
                   COALESCE(SUM(quantity), 0) AS units,
                   COUNT(*) AS transactions
            FROM transactions
-           WHERE type = 'sale'
+           WHERE type = 'sale'{NOT_VOIDED}
              AND substr(created_at, 1, 10) >= ?
              AND substr(created_at, 1, 10) <= ?{user_clause}""",
         (date_from, date_to, *user_params),
@@ -97,7 +101,7 @@ def payment_breakdown(db, date_from, date_to, user_id=None):
                   COALESCE(SUM(total_amount), 0) AS revenue,
                   COUNT(DISTINCT checkout_ref) AS checkouts
            FROM transactions
-           WHERE type = 'sale'
+           WHERE type = 'sale'{NOT_VOIDED}
              AND payment_method IS NOT NULL
              AND substr(created_at, 1, 10) >= ?
              AND substr(created_at, 1, 10) <= ?{user_clause}
@@ -125,7 +129,7 @@ def category_breakdown(db, date_from, date_to, user_id=None):
                   COUNT(t.id) AS transactions
            FROM transactions t
            JOIN products p ON p.id = t.product_id
-           WHERE t.type = 'sale'
+           WHERE t.type = 'sale'{NOT_VOIDED_T}
              AND substr(t.created_at, 1, 10) >= ?
              AND substr(t.created_at, 1, 10) <= ?{user_clause}
            GROUP BY p.category
@@ -145,7 +149,7 @@ def category_breakdown(db, date_from, date_to, user_id=None):
 
 def seller_breakdown(db, report_date):
     rows = db.execute(
-        """SELECT u.id,
+        f"""SELECT u.id,
                   u.display_name,
                   COALESCE(SUM(t.total_amount), 0) AS revenue,
                   COALESCE(SUM(t.quantity), 0) AS units,
@@ -153,7 +157,7 @@ def seller_breakdown(db, report_date):
            FROM users u
            LEFT JOIN transactions t
              ON t.user_id = u.id
-            AND t.type = 'sale'
+            AND t.type = 'sale'{NOT_VOIDED_T}
             AND substr(t.created_at, 1, 10) = ?
            WHERE u.role = 'seller'
              AND u.is_active = 1
@@ -181,7 +185,7 @@ def top_products_for_day(db, report_date, limit=5, user_id=None):
                   COALESCE(SUM(t.total_amount), 0) AS revenue
            FROM transactions t
            JOIN products p ON p.id = t.product_id
-           WHERE t.type = 'sale'
+           WHERE t.type = 'sale'{NOT_VOIDED_T}
              AND substr(t.created_at, 1, 10) = ?{user_clause}
            GROUP BY p.id
            ORDER BY units DESC, revenue DESC
