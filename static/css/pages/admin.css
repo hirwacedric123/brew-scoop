@@ -78,3 +78,18 @@
 #view-admin .table-wrap:hover {
   box-shadow: var(--shadow-hover);
 }
+
+.attendance-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.attendance-filters input[type="date"],
+.attendance-filters select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+}
