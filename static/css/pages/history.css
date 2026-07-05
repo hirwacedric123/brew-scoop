@@ -96,6 +96,32 @@ body.seller-reports-mode #view-history .data-table thead th:nth-child(7) {
   color: var(--espresso);
 }
 
+.history-row-voided {
+  opacity: 0.55;
+}
+
+.history-row-voided td {
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.25);
+}
+
+.history-row-voided td:last-child,
+.history-row-voided .badge {
+  text-decoration: none;
+}
+
+.history-sale-group strong {
+  display: block;
+}
+
+.history-sale-group span {
+  font-size: 0.82rem;
+}
+
+.btn-danger-text {
+  color: var(--danger, #c0392b);
+}
+
 @media (max-width: 900px) {
   .history-shifts-layout {
     grid-template-columns: 1fr;
