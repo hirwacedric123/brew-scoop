@@ -10,7 +10,7 @@ from env_loader import load_env_file
 
 load_env_file()
 
-from flask import Flask, jsonify, redirect, render_template, request, g, url_for
+from flask import Flask, jsonify, redirect, render_template, request, g, session, url_for
 from werkzeug.security import generate_password_hash
 
 from auth import (
@@ -31,6 +31,7 @@ from auth import (
     validate_email,
     validate_user_payload,
     verify_password,
+    verify_admin_password,
 )
 from password_reset import (
     find_valid_reset_token,
@@ -258,6 +259,48 @@ def _migrate_db(db):
 
     init_password_reset_table(db)
 
+    shift_cols = {
+        row[1] for row in db.execute("PRAGMA table_info(seller_shifts)").fetchall()
+    }
+    for col in (
+        "cash_notes_5000",
+        "cash_notes_2000",
+        "cash_notes_1000",
+        "cash_notes_500",
+        "cash_notes_100",
+    ):
+        if col not in shift_cols:
+            db.execute(
+                f"ALTER TABLE seller_shifts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
+            )
+
+    tx_cols = {row[1] for row in db.execute("PRAGMA table_info(transactions)").fetchall()}
+    if "voided_at" not in tx_cols:
+        db.execute("ALTER TABLE transactions ADD COLUMN voided_at TEXT")
+    if "voided_by" not in tx_cols:
+        db.execute(
+            "ALTER TABLE transactions ADD COLUMN voided_by INTEGER REFERENCES users(id)"
+        )
+
+    db.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS seller_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            logged_in_at TEXT NOT NULL,
+            logged_out_at TEXT,
+            last_heartbeat_at TEXT NOT NULL,
+            logout_reason TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_seller_sessions_user_login
+            ON seller_sessions(user_id, logged_in_at);
+        CREATE INDEX IF NOT EXISTS idx_seller_sessions_user_open
+            ON seller_sessions(user_id, logged_out_at);
+        """
+    )
+
 
 def _migrate_users_role_check(db):
     sql_row = db.execute(
@@ -468,6 +511,11 @@ def _stock_status(quantity, reorder_level):
     return "ok"
 
 
+def _not_voided_clause(alias=""):
+    prefix = f"{alias}." if alias else ""
+    return f" AND {prefix}voided_at IS NULL"
+
+
 def row_to_transaction(row):
     seller_name = ""
     if "seller_name" in row.keys() and row["seller_name"]:
@@ -488,6 +536,8 @@ def row_to_transaction(row):
         "seller_name": seller_name,
         "created_at": row["created_at"],
         "sale_date": row["created_at"][:10],
+        "voided_at": row["voided_at"] if "voided_at" in row.keys() else None,
+        "is_voided": bool(row["voided_at"] if "voided_at" in row.keys() else None),
     }
 
 
@@ -530,7 +580,7 @@ def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
                   COALESCE(SUM(quantity), 0) AS units,
                   COUNT(*) AS transactions
            FROM transactions
-           WHERE type = 'sale'
+           WHERE type = 'sale'{_not_voided_clause()}
              AND substr(created_at, 1, 10) >= ?
              AND substr(created_at, 1, 10) <= ?{user_clause}
            GROUP BY sale_date
@@ -555,7 +605,7 @@ def login():
     user = get_current_user(get_db())
     if user is not None:
         if row_to_user(user)["must_change_password"]:
-            return redirect(url_for("change_password"))
+            return render_template("login.html", signed_in_as=public_user(user))
         return redirect(url_for("index"))
     return render_template("login.html")
 
@@ -598,6 +648,69 @@ def index():
 
 # ── Auth API ───────────────────────────────────────────────────────────────
 
+def _close_open_sessions(db, user_id, reason, exclude_id=None):
+    ts = now_iso()
+    query = """UPDATE seller_sessions
+               SET logged_out_at = ?, logout_reason = ?
+               WHERE user_id = ? AND logged_out_at IS NULL"""
+    params = [ts, reason, user_id]
+    if exclude_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    db.execute(query, params)
+
+
+def _start_seller_session(db, user_id):
+    ts = now_iso()
+    _close_open_sessions(db, user_id, "superseded")
+    cur = db.execute(
+        """INSERT INTO seller_sessions (user_id, logged_in_at, last_heartbeat_at)
+           VALUES (?, ?, ?)""",
+        (user_id, ts, ts),
+    )
+    db.commit()
+    session["seller_session_id"] = cur.lastrowid
+    return cur.lastrowid
+
+
+def _end_seller_session(db, session_id, reason="manual"):
+    if not session_id:
+        return
+    ts = now_iso()
+    db.execute(
+        """UPDATE seller_sessions SET logged_out_at = ?, logout_reason = ?
+           WHERE id = ? AND logged_out_at IS NULL""",
+        (ts, reason, session_id),
+    )
+    db.commit()
+
+
+def _ensure_attendance_session(db, user_id):
+    session_id = session.get("seller_session_id")
+    if session_id:
+        row = db.execute(
+            """SELECT id FROM seller_sessions
+               WHERE id = ? AND user_id = ? AND logged_out_at IS NULL""",
+            (session_id, user_id),
+        ).fetchone()
+        if row:
+            return session_id
+    return _start_seller_session(db, user_id)
+
+
+def _session_duration_seconds(row):
+    start = row["logged_in_at"]
+    end = row["logged_out_at"] or row["last_heartbeat_at"]
+    if not start or not end:
+        return 0
+    try:
+        start_dt = datetime.strptime(start[:19], "%Y-%m-%dT%H:%M:%S")
+        end_dt = datetime.strptime(end[:19], "%Y-%m-%dT%H:%M:%S")
+        return max(0, int((end_dt - start_dt).total_seconds()))
+    except ValueError:
+        return 0
+
+
 @app.route("/api/auth/login", methods=["POST"])
 def auth_login():
     data = request.get_json(silent=True) or {}
@@ -613,6 +726,7 @@ def auth_login():
         return jsonify({"error": "Invalid username or password"}), 401
 
     login_user(row["id"])
+    _start_seller_session(db, row["id"])
     user_data = public_user(row)
     return jsonify(
         {
@@ -711,8 +825,25 @@ def auth_reset_password():
 
 @app.route("/api/auth/logout", methods=["POST"])
 def auth_logout():
+    session_id = session.get("seller_session_id")
+    _end_seller_session(get_db(), session_id, "manual")
     logout_user()
     return jsonify({"message": "Logged out"})
+
+
+@app.route("/api/auth/heartbeat", methods=["POST"])
+@login_required
+def auth_heartbeat():
+    db = get_db()
+    user = get_current_user(db)
+    session_id = _ensure_attendance_session(db, user["id"])
+    ts = now_iso()
+    db.execute(
+        "UPDATE seller_sessions SET last_heartbeat_at = ? WHERE id = ?",
+        (ts, session_id),
+    )
+    db.commit()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/auth/me", methods=["GET"])
@@ -731,6 +862,73 @@ def admin_list_users():
         "SELECT * FROM users ORDER BY role ASC, username ASC"
     ).fetchall()
     return jsonify([row_to_user(r) for r in rows])
+
+
+@app.route("/api/admin/attendance", methods=["GET"])
+@admin_required
+def admin_attendance():
+    date_from = request.args.get("from", "").strip() or today_kigali()
+    date_to = request.args.get("to", "").strip() or date_from
+    user_id = _parse_user_id_filter(request.args.get("user_id", "").strip())
+
+    if not parse_date(date_from) or not parse_date(date_to):
+        return jsonify({"error": "Invalid date range"}), 400
+
+    query = """
+        SELECT s.*, u.display_name, u.username, u.role
+        FROM seller_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE substr(s.logged_in_at, 1, 10) >= ?
+          AND substr(s.logged_in_at, 1, 10) <= ?
+    """
+    params = [date_from, date_to]
+    if user_id is not None:
+        query += " AND s.user_id = ?"
+        params.append(user_id)
+    query += " ORDER BY s.logged_in_at DESC"
+
+    rows = get_db().execute(query, params).fetchall()
+    sessions = []
+    for row in rows:
+        duration = _session_duration_seconds(row)
+        idle_gap = False
+        if row["logged_out_at"] and row["last_heartbeat_at"]:
+            try:
+                end_dt = datetime.strptime(row["logged_out_at"][:19], "%Y-%m-%dT%H:%M:%S")
+                hb_dt = datetime.strptime(row["last_heartbeat_at"][:19], "%Y-%m-%dT%H:%M:%S")
+                idle_gap = (end_dt - hb_dt).total_seconds() > 900
+            except ValueError:
+                idle_gap = False
+        hours, rem = divmod(duration, 3600)
+        mins, secs = divmod(rem, 60)
+        if hours:
+            duration_label = f"{hours}h {mins}m"
+        elif mins:
+            duration_label = f"{mins}m {secs}s"
+        else:
+            duration_label = f"{secs}s"
+
+        sessions.append({
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "display_name": row["display_name"],
+            "username": row["username"],
+            "role": row["role"],
+            "logged_in_at": row["logged_in_at"],
+            "logged_out_at": row["logged_out_at"],
+            "last_heartbeat_at": row["last_heartbeat_at"],
+            "logout_reason": row["logout_reason"],
+            "duration_seconds": duration,
+            "duration_label": duration_label,
+            "is_active": row["logged_out_at"] is None,
+            "idle_before_logout": idle_gap,
+        })
+
+    return jsonify({
+        "from": date_from,
+        "to": date_to,
+        "sessions": sessions,
+    })
 
 
 @app.route("/api/admin/users", methods=["POST"])
@@ -1268,6 +1466,129 @@ def checkout_sale():
     return jsonify(result), status
 
 
+def _execute_void_sale(db, checkout_ref, voided_by_user_id):
+    checkout_ref = (checkout_ref or "").strip()
+    if not checkout_ref:
+        return None, "Sale reference is required", 400
+
+    rows = db.execute(
+        """SELECT t.*, p.category
+           FROM transactions t
+           JOIN products p ON p.id = t.product_id
+           WHERE t.type = 'sale' AND t.checkout_ref = ? AND t.voided_at IS NULL""",
+        (checkout_ref,),
+    ).fetchall()
+    if not rows:
+        existing = db.execute(
+            """SELECT 1 FROM transactions
+               WHERE type = 'sale' AND checkout_ref = ? AND voided_at IS NOT NULL
+               LIMIT 1""",
+            (checkout_ref,),
+        ).fetchone()
+        if existing:
+            return None, "Sale already voided", 409
+        return None, "Sale not found", 404
+
+    ts = now_iso()
+    category_cup_map = get_category_cup_map(db)
+    cup_inv = get_cup_inventory(db)
+    cup_units_restore = 0
+
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        for row in rows:
+            quantity = row["quantity"]
+            product_id = row["product_id"]
+            uses_cups = category_cup_map.get(row["category"], False)
+
+            if uses_cups:
+                cup_units_restore += quantity
+            else:
+                product = db.execute(
+                    "SELECT quantity FROM products WHERE id = ?", (product_id,)
+                ).fetchone()
+                new_qty = product["quantity"] + quantity
+                db.execute(
+                    "UPDATE products SET quantity=?, updated_at=? WHERE id=?",
+                    (new_qty, ts, product_id),
+                )
+
+        if cup_units_restore > 0:
+            new_cups = cup_inv["quantity"] + cup_units_restore
+            db.execute(
+                "UPDATE cup_inventory SET quantity=?, updated_at=? WHERE id=1",
+                (new_cups, ts),
+            )
+            db.execute(
+                """INSERT INTO cup_transactions
+                   (type, quantity, notes, checkout_ref, created_at)
+                   VALUES ('adjustment', ?, ?, ?, ?)""",
+                (
+                    cup_units_restore,
+                    f"Void sale {checkout_ref}",
+                    checkout_ref,
+                    ts,
+                ),
+            )
+
+        db.execute(
+            """UPDATE transactions SET voided_at = ?, voided_by = ?
+               WHERE type = 'sale' AND checkout_ref = ? AND voided_at IS NULL""",
+            (ts, voided_by_user_id, checkout_ref),
+        )
+        db.commit()
+        return {
+            "checkout_ref": checkout_ref,
+            "voided_at": ts,
+            "lines_voided": len(rows),
+        }, None, 200
+    except Exception:
+        db.rollback()
+        raise
+
+
+@app.route("/api/sales/void", methods=["POST"])
+@login_required
+def void_sale():
+    data = request.get_json(silent=True) or {}
+    checkout_ref = (data.get("checkout_ref") or "").strip()
+    admin_password = data.get("admin_password") or ""
+
+    if not admin_password:
+        return jsonify({"error": "Admin password is required"}), 400
+
+    db = get_db()
+    user = get_current_user(db)
+
+    if not verify_admin_password(db, admin_password):
+        return jsonify({"error": "Invalid admin password"}), 403
+
+    owner_row = db.execute(
+        """SELECT user_id FROM transactions
+           WHERE type = 'sale' AND checkout_ref = ? AND voided_at IS NULL
+           LIMIT 1""",
+        (checkout_ref,),
+    ).fetchone()
+    if not owner_row:
+        existing = db.execute(
+            """SELECT 1 FROM transactions
+               WHERE type = 'sale' AND checkout_ref = ? AND voided_at IS NOT NULL
+               LIMIT 1""",
+            (checkout_ref,),
+        ).fetchone()
+        if existing:
+            return jsonify({"error": "Sale already voided"}), 409
+        return jsonify({"error": "Sale not found"}), 404
+
+    if user["role"] == "seller" and owner_row["user_id"] != user["id"]:
+        return jsonify({"error": "You can only void your own sales"}), 403
+
+    result, error, status = _execute_void_sale(db, checkout_ref, user["id"])
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify({**result, "message": "Sale voided and stock restored"})
+
+
 def get_open_seller_shift(db, user_id):
     return db.execute(
         """SELECT * FROM seller_shifts
@@ -1278,9 +1599,43 @@ def get_open_seller_shift(db, user_id):
     ).fetchone()
 
 
+CASH_DENOMINATIONS = (5000, 2000, 1000, 500, 100)
+
+
+def _parse_cash_notes(data):
+    notes = data.get("cash_notes") if isinstance(data, dict) else None
+    if notes is None:
+        notes = {}
+    result = {}
+    for denom in CASH_DENOMINATIONS:
+        key = str(denom)
+        try:
+            count = int(notes.get(key, 0))
+        except (TypeError, ValueError):
+            return None, f"Invalid count for {denom:,} RWF notes"
+        if count < 0:
+            return None, "Note counts cannot be negative"
+        result[denom] = count
+    return result, None
+
+
+def _cash_total_from_notes(notes_dict):
+    return sum(denom * count for denom, count in notes_dict.items())
+
+
+def _cash_notes_from_row(row):
+    return {
+        "5000": row["cash_notes_5000"] or 0,
+        "2000": row["cash_notes_2000"] or 0,
+        "1000": row["cash_notes_1000"] or 0,
+        "500": row["cash_notes_500"] or 0,
+        "100": row["cash_notes_100"] or 0,
+    }
+
+
 def _seller_sales_for_shift(db, shift_id):
     row = db.execute(
-        """SELECT
+        f"""SELECT
                COALESCE(SUM(total_amount), 0) AS total_sales,
                COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0) AS cash_sales,
                COALESCE(SUM(CASE WHEN payment_method = 'momo' THEN total_amount ELSE 0 END), 0) AS momo_sales,
@@ -1288,7 +1643,7 @@ def _seller_sales_for_shift(db, shift_id):
                COALESCE(SUM(quantity), 0) AS units_sold,
                COUNT(*) AS sale_count
            FROM transactions
-           WHERE type = 'sale' AND shift_id = ?""",
+           WHERE type = 'sale' AND shift_id = ?{_not_voided_clause()}""",
         (shift_id,),
     ).fetchone()
     return {
@@ -1334,6 +1689,7 @@ def _row_to_shift(row, include_close=False):
             "units_sold": row["units_sold"] or 0,
             "sale_count": row["sale_count"] or 0,
             "status_label": _shift_variance_status(row["variance"] or 0),
+            "cash_notes": _cash_notes_from_row(row),
         })
     return data
 
@@ -1360,16 +1716,16 @@ def fmt_rwf(amount):
 def _shift_close_message(row):
     variance = row["variance"] or 0
     if variance == 0:
-        return "Your total matches what the system recorded for this shift."
+        return "Your cash count matches the cash sales recorded for this shift."
 
     if variance > 0:
         return (
-            f"You entered {fmt_rwf(row['counted_cash'] or 0)} — "
-            f"{fmt_rwf(abs(variance))} more than the {fmt_rwf(row['expected_cash'] or 0)} recorded here."
+            f"You counted {fmt_rwf(row['counted_cash'] or 0)} in cash — "
+            f"{fmt_rwf(abs(variance))} more than the {fmt_rwf(row['expected_cash'] or 0)} cash sales recorded."
         )
     return (
-        f"You entered {fmt_rwf(row['counted_cash'] or 0)} — "
-        f"short by {fmt_rwf(abs(variance))} compared to the {fmt_rwf(row['expected_cash'] or 0)} recorded here."
+        f"You counted {fmt_rwf(row['counted_cash'] or 0)} in cash — "
+        f"short by {fmt_rwf(abs(variance))} compared to the {fmt_rwf(row['expected_cash'] or 0)} cash sales recorded."
     )
 
 
@@ -1380,9 +1736,11 @@ def seller_shift_status():
     user = get_current_user(db)
     open_shift = get_open_seller_shift(db, user["id"])
     if open_shift:
+        shift_data = _row_to_shift(open_shift)
+        shift_data["live_sales"] = _seller_sales_for_shift(db, open_shift["id"])
         return jsonify({
             "has_open_shift": True,
-            "shift": _row_to_shift(open_shift),
+            "shift": shift_data,
         })
 
     last_closed = db.execute(
@@ -1430,12 +1788,11 @@ def seller_shift_start():
 @role_required("seller")
 def seller_shift_close():
     data = request.get_json(silent=True) or {}
-    try:
-        counted_cash = round(float(data.get("counted_cash")), 2)
-        if counted_cash < 0:
-            return jsonify({"error": "Total cannot be negative"}), 400
-    except (TypeError, ValueError):
-        return jsonify({"error": "Enter a valid total amount"}), 400
+    cash_notes, error = _parse_cash_notes(data)
+    if error:
+        return jsonify({"error": error}), 400
+
+    counted_cash = _cash_total_from_notes(cash_notes)
 
     db = get_db()
     user = get_current_user(db)
@@ -1444,8 +1801,8 @@ def seller_shift_close():
         return jsonify({"error": "No open shift to close. Start a shift first."}), 400
 
     sales = _seller_sales_for_shift(db, shift["id"])
-    expected_total = sales["total_sales"]
-    variance = round(counted_cash - expected_total, 2)
+    expected_cash = sales["cash_sales"]
+    variance = round(counted_cash - expected_cash, 2)
     ts = now_iso()
 
     db.execute(
@@ -1460,12 +1817,17 @@ def seller_shift_close():
            momo_sales = ?,
            visa_sales = ?,
            units_sold = ?,
-           sale_count = ?
+           sale_count = ?,
+           cash_notes_5000 = ?,
+           cash_notes_2000 = ?,
+           cash_notes_1000 = ?,
+           cash_notes_500 = ?,
+           cash_notes_100 = ?
            WHERE id = ?""",
         (
             ts,
             counted_cash,
-            expected_total,
+            expected_cash,
             variance,
             sales["total_sales"],
             sales["cash_sales"],
@@ -1473,6 +1835,11 @@ def seller_shift_close():
             sales["visa_sales"],
             sales["units_sold"],
             sales["sale_count"],
+            cash_notes[5000],
+            cash_notes[2000],
+            cash_notes[1000],
+            cash_notes[500],
+            cash_notes[100],
             shift["id"],
         ),
     )
@@ -1727,12 +2094,12 @@ def list_sellers():
 def sales_dates():
     db = get_db()
     rows = db.execute(
-        """SELECT substr(created_at, 1, 10) AS sale_date,
+        f"""SELECT substr(created_at, 1, 10) AS sale_date,
                   COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units,
                   COUNT(*) AS transactions
            FROM transactions
-           WHERE type = 'sale'
+           WHERE type = 'sale'{_not_voided_clause()}
            GROUP BY sale_date
            ORDER BY sale_date DESC"""
     ).fetchall()
@@ -1782,7 +2149,7 @@ def sales_report():
            FROM transactions t
            JOIN products p ON p.id = t.product_id
            LEFT JOIN users u ON u.id = t.user_id
-           WHERE t.type = 'sale'
+           WHERE t.type = 'sale'{_not_voided_clause("t")}
              AND substr(t.created_at, 1, 10) >= ?
              AND substr(t.created_at, 1, 10) <= ?{user_clause}
            ORDER BY t.created_at DESC""",
@@ -1828,6 +2195,7 @@ def _shift_report_row(db, row):
             "units_sold": row["units_sold"] or 0,
             "sale_count": row["sale_count"] or 0,
             "status_label": _shift_variance_status(row["variance"] or 0),
+            "cash_notes": _cash_notes_from_row(row),
         })
     else:
         data.update(_seller_sales_for_shift(db, row["id"]))
@@ -2018,36 +2386,36 @@ def dashboard_stats():
     month_from, month_to = month_range_kigali()
 
     sales_today = db.execute(
-        """SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units
-           FROM transactions WHERE type='sale' AND substr(created_at, 1, 10) = ?""",
+           FROM transactions WHERE type='sale'{_not_voided_clause()} AND substr(created_at, 1, 10) = ?""",
         (today,),
     ).fetchone()
 
     sales_week = db.execute(
-        """SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units
            FROM transactions
-           WHERE type='sale'
+           WHERE type='sale'{_not_voided_clause()}
              AND substr(created_at, 1, 10) >= ?
              AND substr(created_at, 1, 10) <= ?""",
         (week_from, week_to),
     ).fetchone()
 
     sales_month = db.execute(
-        """SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units
            FROM transactions
-           WHERE type='sale'
+           WHERE type='sale'{_not_voided_clause()}
              AND substr(created_at, 1, 10) >= ?
              AND substr(created_at, 1, 10) <= ?""",
         (month_from, month_to),
     ).fetchone()
 
     sales_all = db.execute(
-        """SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
                   COUNT(*) AS count
-           FROM transactions WHERE type='sale'"""
+           FROM transactions WHERE type='sale'{_not_voided_clause()}"""
     ).fetchone()
 
     category_stats = db.execute(
@@ -2061,13 +2429,13 @@ def dashboard_stats():
     ).fetchall()
 
     sales_by_category_today = db.execute(
-        """SELECT p.category,
+        f"""SELECT p.category,
                   COALESCE(SUM(t.total_amount), 0) AS revenue,
                   COALESCE(SUM(t.quantity), 0) AS units,
                   COUNT(t.id) AS transactions
            FROM transactions t
            JOIN products p ON p.id = t.product_id
-           WHERE t.type = 'sale'
+           WHERE t.type = 'sale'{_not_voided_clause("t")}
              AND substr(t.created_at, 1, 10) = ?
            GROUP BY p.category
            ORDER BY revenue DESC, p.category COLLATE NOCASE ASC""",
@@ -2075,11 +2443,11 @@ def dashboard_stats():
     ).fetchall()
 
     top_products = db.execute(
-        """SELECT p.id, p.name, p.category, p.price,
+        f"""SELECT p.id, p.name, p.category, p.price,
                   COALESCE(SUM(t.quantity), 0) AS units_sold,
                   COALESCE(SUM(t.total_amount), 0) AS revenue
            FROM products p
-           LEFT JOIN transactions t ON t.product_id = p.id AND t.type = 'sale'
+           LEFT JOIN transactions t ON t.product_id = p.id AND t.type = 'sale' AND t.voided_at IS NULL
            GROUP BY p.id
            ORDER BY units_sold DESC
            LIMIT 5"""
