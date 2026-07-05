@@ -29,7 +29,19 @@
       <div class="login-shell">
         <div class="login-card">
           <h2>Welcome back</h2>
+          {% if signed_in_as %}
+          <p class="login-subtitle">
+            Signed in as <strong>{{ signed_in_as.display_name }}</strong>.
+            You must set a new password before using the app, or sign out to use another account.
+          </p>
+          <p class="login-form-footer login-signed-in-notice">
+            <a href="{{ url_for('change_password') }}">Continue to password change</a>
+            ·
+            <a href="#" id="btn-sign-out">Sign out</a>
+          </p>
+          {% else %}
           <p class="login-subtitle">Sign in to manage inventory and sales</p>
+          {% endif %}
 
           <form id="login-form" class="login-form">
             <div class="form-group">
@@ -70,6 +82,14 @@
       container.appendChild(el);
       setTimeout(() => el.remove(), 3500);
     }
+
+    document.getElementById("btn-sign-out")?.addEventListener("click", async (e) => {
+      e.preventDefault();
+      try {
+        await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+      } catch (_) {}
+      window.location.href = "/login";
+    });
 
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
