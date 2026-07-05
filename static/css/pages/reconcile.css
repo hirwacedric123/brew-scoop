@@ -1357,3 +1357,124 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Cash note denomination close form ───────────────────────────────────── */
+
+.cash-notes-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.cash-notes-head label {
+  font-weight: 600;
+}
+
+.cash-notes-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.cash-note-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1.25rem 4.5rem 1.25rem 1fr;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cash-note-label {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-note-times,
+.cash-note-equals {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.cash-note-input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  text-align: center;
+}
+
+.cash-notes-total-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated, #faf8f5);
+  border: 1px solid var(--border-subtle);
+  font-weight: 600;
+}
+
+.shift-system-payments {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: #f8fafc;
+  border: 1px solid var(--border-subtle);
+}
+
+.shift-system-payments h4 {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.shift-system-payments-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+}
+
+.shift-system-payments-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.shift-system-payments-grid strong {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+}
+
+.cash-notes-breakdown {
+  margin: 0.75rem 0 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius-sm);
+  background: white;
+  border: 1px solid var(--border-subtle);
+}
+
+.cash-notes-breakdown h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.cash-note-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 520px) {
+  .cash-note-row {
+    grid-template-columns: 3.5rem 1rem 3.25rem 1rem 1fr;
+  }
+
+  .shift-system-payments-grid {
+    grid-template-columns: 1fr;
+  }
+}
