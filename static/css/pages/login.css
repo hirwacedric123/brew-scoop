@@ -139,6 +139,11 @@
   font-size: 0.9rem;
 }
 
+.login-signed-in-notice {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+
 .login-form-footer a {
   color: var(--coffee);
   text-decoration: none;
