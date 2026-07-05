@@ -31,6 +31,7 @@ const state = {
   users: [],
   deleteUserId: null,
   deleteCategoryId: null,
+  voidCheckoutRef: null,
   currentUser: window.CURRENT_USER || null,
   sellerShift: null,
 };
@@ -448,9 +449,11 @@ function switchAdminTab(tabId) {
   });
   document.getElementById("admin-panel-team").hidden = tabId !== "team";
   document.getElementById("admin-panel-categories").hidden = tabId !== "categories";
+  document.getElementById("admin-panel-attendance").hidden = tabId !== "attendance";
 
   if (tabId === "team") loadUsers();
   if (tabId === "categories") loadCategoriesAdmin();
+  if (tabId === "attendance") loadAttendance();
 }
 
 function loadAdminView() {
@@ -1468,24 +1471,11 @@ async function completeCheckout() {
       }),
     });
 
-    const itemsHtml = result.items
-      .map(
-        (item) => `
-      <div class="checkout-line">
-        <span>${esc(item.product.name)} × ${item.quantity_sold}</span>
-        <strong>${fmt.format(item.total_amount)}</strong>
-      </div>`
-      )
-      .join("");
-
-    document.getElementById("sale-success-details").innerHTML = `
-      <p class="checkout-ref"><span>Reference</span><strong>${esc(result.checkout_ref)}</strong></p>
-      <p class="checkout-payment"><span>Payment</span><strong>${esc(result.payment_label || paymentMethodLabel(result.payment_method))}</strong></p>
-      <div class="checkout-lines">${itemsHtml}</div>
-      <p class="checkout-grand-total"><span>Total</span><strong>${fmt.format(result.total_amount)}</strong></p>
-      <p><span>Items</span><strong>${result.total_units} units · ${result.line_count} products</strong></p>
-    `;
-    showModal("sale-success-modal");
+    const paymentLabel = result.payment_label || paymentMethodLabel(result.payment_method);
+    toast(
+      `Payment received — ${fmt.format(result.total_amount)} · ${paymentLabel} · ${result.checkout_ref}`,
+      "success"
+    );
 
     clearCart();
     await loadSellView();
@@ -1519,6 +1509,66 @@ const SHIFT_HERO_ICONS = {
 let shiftTimerInterval = null;
 let shiftUiPhase = "sell"; // "sell" | "close" while shift is open
 
+const CASH_DENOMS = [5000, 2000, 1000, 500, 100];
+
+function readCashNotesFromForm() {
+  const notes = {};
+  for (const denom of CASH_DENOMS) {
+    const input = document.getElementById(`cash-note-${denom}`);
+    notes[String(denom)] = parseInt(input?.value, 10) || 0;
+  }
+  return notes;
+}
+
+function updateCashNotesTotal() {
+  const notes = readCashNotesFromForm();
+  let total = 0;
+  for (const denom of CASH_DENOMS) {
+    const count = notes[String(denom)];
+    total += denom * count;
+    const subEl = document.getElementById(`cash-note-sub-${denom}`);
+    if (subEl) subEl.textContent = fmt.format(denom * count);
+  }
+  const totalEl = document.getElementById("cash-notes-total");
+  if (totalEl) totalEl.textContent = fmt.format(total);
+}
+
+function clearCashNoteInputs() {
+  for (const denom of CASH_DENOMS) {
+    const input = document.getElementById(`cash-note-${denom}`);
+    if (input) input.value = "";
+  }
+  updateCashNotesTotal();
+}
+
+function renderCashNotesBreakdown(cashNotes) {
+  if (!cashNotes) return "";
+  return CASH_DENOMS.map((denom) => {
+    const count = cashNotes[String(denom)] || 0;
+    if (!count) return "";
+    return `<div class="cash-note-line"><span>${fmtNum.format(denom)} × ${count}</span><strong>${fmt.format(denom * count)}</strong></div>`;
+  })
+    .filter(Boolean)
+    .join("");
+}
+
+function updateShiftCloseSystemPayments() {
+  const panel = document.getElementById("shift-system-payments");
+  const live = state.sellerShift?.shift?.live_sales;
+  if (!panel) return;
+  if (!live || shiftUiPhase !== "close") {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const momoEl = document.getElementById("shift-close-momo");
+  const visaEl = document.getElementById("shift-close-visa");
+  const cashEl = document.getElementById("shift-close-cash-expected");
+  if (momoEl) momoEl.textContent = fmt.format(live.momo_sales || 0);
+  if (visaEl) visaEl.textContent = fmt.format(live.visa_sales || 0);
+  if (cashEl) cashEl.textContent = fmt.format(live.cash_sales || 0);
+}
+
 function setShiftUiPhase(phase) {
   shiftUiPhase = phase === "close" ? "close" : "sell";
   const data = state.sellerShift;
@@ -1528,7 +1578,7 @@ function setShiftUiPhase(phase) {
     if (descEl) {
       descEl.textContent =
         shiftUiPhase === "close"
-          ? `Started ${startedAt}. Enter your total collected to finish.`
+          ? `Started ${startedAt}. Count your cash notes to finish.`
           : `Started ${startedAt}. Head to Sell to record orders — close when you're done.`;
     }
   }
@@ -1552,9 +1602,10 @@ function renderShiftOpenPhase() {
   }
   if (subtitle) {
     subtitle.textContent = closing
-      ? "Enter the total you collected — cash, MoMo, and Visa combined."
-      : "Sell during your shift, then enter your total collected to see if it matches what was recorded.";
+      ? "Count the cash notes in your till and compare to recorded cash sales."
+      : "Sell during your shift, then count your cash notes to close.";
   }
+  updateShiftCloseSystemPayments();
   updateShiftSteps(closing ? "close" : "sell");
 }
 
@@ -1760,22 +1811,27 @@ function renderShiftSummary(shift, message) {
 
   const status = reconcileStatusLabel(shift.status_label || "balanced");
   const varianceAbs = fmt.format(Math.abs(shift.variance || 0));
-  const expected = shift.expected_total ?? shift.expected_cash ?? shift.total_sales;
+  const expectedCash = shift.expected_cash ?? shift.cash_sales ?? 0;
   const counted = shift.counted_total ?? shift.counted_cash;
   const varianceLine =
     shift.status_label === "balanced"
-      ? "Your total matches what was recorded in the system for this shift."
+      ? "Your cash count matches the cash sales recorded for this shift."
       : shift.status_label === "over"
-        ? `You entered ${varianceAbs} more than recorded.`
-        : `You are short by ${varianceAbs} compared to what was recorded.`;
+        ? `You counted ${varianceAbs} more cash than recorded.`
+        : `You are short by ${varianceAbs} in cash compared to what was recorded.`;
 
   const payTotal = (shift.cash_sales || 0) + (shift.momo_sales || 0) + (shift.visa_sales || 0);
   const varianceChip =
     shift.status_label === "balanced"
-      ? "Totals match"
+      ? "Cash balanced"
       : shift.status_label === "over"
         ? `+${varianceAbs}`
         : `−${varianceAbs}`;
+
+  const notesHtml = renderCashNotesBreakdown(shift.cash_notes);
+  const notesSection = notesHtml
+    ? `<div class="cash-notes-breakdown"><h4>Cash note breakdown</h4>${notesHtml}</div>`
+    : "";
 
   resultEl.innerHTML = `
     <div class="reconcile-summary">
@@ -1789,10 +1845,11 @@ function renderShiftSummary(shift, message) {
         </div>
         <div class="shift-result-body">
           <div class="reconcile-grid">
-            ${statCard("revenue", UI_ICONS.revenue, "Recorded here", fmt.format(shift.total_sales), "What the system logged")}
-            ${statCard("sales", UI_ICONS.sales, "You entered", fmt.format(counted), "Your total (all payments)")}
-            ${statCard("month", UI_ICONS.chart, "Difference", fmt.format(Math.abs(shift.variance || 0)), shift.status_label === "balanced" ? "No difference" : varianceLine)}
+            ${statCard("revenue", UI_ICONS.revenue, "Total sales", fmt.format(shift.total_sales), "All payment types")}
+            ${statCard("sales", UI_ICONS.sales, "Cash counted", fmt.format(counted), "Notes in your till")}
+            ${statCard("month", UI_ICONS.chart, "Cash expected", fmt.format(expectedCash), "Cash sales recorded")}
           </div>
+          ${notesSection}
           <div class="reconcile-payments">
             <h4>Recorded breakdown</h4>
             ${renderPaymentRow("Cash", shift.cash_sales, payTotal, "cash")}
@@ -1835,7 +1892,6 @@ function renderShiftView() {
   const resultCard = document.getElementById("shift-result-card");
   const sellHint = document.getElementById("shift-sell-hint");
   const heroActions = document.getElementById("shift-hero-actions");
-  const cashInput = document.getElementById("reconcile-cash-amount");
 
   const data = state.sellerShift;
   const open = data?.has_open_shift;
@@ -1849,12 +1905,11 @@ function renderShiftView() {
 
   if (open && data.shift) {
     const startedAt = formatDate(data.shift.opened_at);
-    if (cashInput) cashInput.value = "";
     updateShiftHero(
       "open",
       "Your shift is live",
       shiftUiPhase === "close"
-        ? `Started ${startedAt}. Enter your total collected to finish.`
+        ? `Started ${startedAt}. Count your cash notes to finish.`
         : `Started ${startedAt}. Head to Sell to record orders — close when you're done.`,
       "In progress",
       "open"
@@ -1920,20 +1975,18 @@ async function submitCloseShift(e) {
   e.preventDefault();
   if (!isSeller()) return;
 
-  const input = document.getElementById("reconcile-cash-amount");
   const btn = document.getElementById("btn-reconcile");
-  const countedCash = parseFloat(input?.value);
-
-  if (Number.isNaN(countedCash) || countedCash < 0) {
-    toast("Enter a valid total amount", "error");
-    return;
-  }
+  const cashNotes = readCashNotesFromForm();
+  const countedCash = CASH_DENOMS.reduce(
+    (sum, denom) => sum + denom * (cashNotes[String(denom)] || 0),
+    0
+  );
 
   btn.disabled = true;
   try {
     const data = await api("/api/seller/shift/close", {
       method: "POST",
-      body: JSON.stringify({ counted_cash: countedCash }),
+      body: JSON.stringify({ cash_notes: cashNotes }),
     });
     state.sellerShift = {
       has_open_shift: false,
@@ -1959,14 +2012,9 @@ function showStartShiftForm() {
   document.getElementById("btn-start-shift")?.focus();
 }
 
-function initShiftPresets() {
-  document.querySelectorAll("#cash-presets .shift-preset").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const input = document.getElementById("reconcile-cash-amount");
-      if (input) input.value = btn.dataset.cash;
-      document.querySelectorAll("#cash-presets .shift-preset").forEach((b) => b.classList.remove("is-active"));
-      btn.classList.add("is-active");
-    });
+function initCashNoteInputs() {
+  document.querySelectorAll(".cash-note-input").forEach((input) => {
+    input.addEventListener("input", updateCashNotesTotal);
   });
 }
 
@@ -2361,32 +2409,136 @@ function initHistoryShiftFilters() {
   });
 }
 
+function groupHistorySales(transactions) {
+  const sales = transactions.filter((t) => t.type === "sale");
+  const other = transactions.filter((t) => t.type !== "sale");
+  const groups = new Map();
+
+  for (const sale of sales) {
+    const key = sale.checkout_ref || `line-${sale.id}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        checkout_ref: key,
+        created_at: sale.created_at,
+        payment_method: sale.payment_method,
+        seller_name: sale.seller_name,
+        user_id: sale.user_id,
+        items: [],
+        total: 0,
+        units: 0,
+        is_voided: !!sale.is_voided,
+        notes: sale.notes,
+      });
+    }
+    const group = groups.get(key);
+    group.items.push(sale);
+    group.total += sale.total_amount;
+    group.units += sale.quantity;
+    group.is_voided = group.is_voided || !!sale.is_voided;
+  }
+
+  const groupedSales = [...groups.values()].sort(
+    (a, b) => new Date(b.created_at) - new Date(a.created_at)
+  );
+  return { groupedSales, other };
+}
+
+function historySaleProductCell(group) {
+  if (group.items.length === 1) {
+    const item = group.items[0];
+    return productCell(item.product_name, esc(item.category));
+  }
+  const names = group.items.map((i) => esc(i.product_name)).join(", ");
+  return `<div class="history-sale-group"><strong>${group.items.length} items</strong><span class="text-muted">${names}</span></div>`;
+}
+
+function historyVoidAction(group) {
+  if (group.is_voided) {
+    return '<span class="badge badge-muted">Voided</span>';
+  }
+  if (!group.checkout_ref || group.checkout_ref.startsWith("line-")) {
+    return "—";
+  }
+  return `<button type="button" class="btn btn-ghost btn-sm btn-danger-text" onclick="openVoidSaleModal(${JSON.stringify(group.checkout_ref)})">Void</button>`;
+}
+
 function renderHistory(transactions) {
   const tbody = document.getElementById("history-table-body");
   const hideSellerCol = isSeller();
+  const colCount = hideSellerCol ? 8 : 9;
+
   if (!transactions.length) {
-    const cols = hideSellerCol ? 7 : 8;
-    tbody.innerHTML = `<tr><td colspan="${cols}">${emptyState(UI_ICONS.clock, "No transactions", hideSellerCol ? "Your sales will appear here." : "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colCount}">${emptyState(UI_ICONS.clock, "No transactions", hideSellerCol ? "Your sales will appear here." : "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = transactions
+  const { groupedSales, other } = groupHistorySales(transactions);
+  const saleRows = groupedSales
+    .map(
+      (group) => `
+    <tr class="${group.is_voided ? "history-row-voided" : ""}">
+      <td>${formatDate(group.created_at)}</td>
+      <td>${historySaleProductCell(group)}</td>
+      <td>${typeBadge("sale")}${group.is_voided ? ' <span class="badge badge-muted">Voided</span>' : ""}</td>
+      <td>${fmtNum.format(group.units)}</td>
+      <td>${fmt.format(group.total)}</td>
+      <td>${paymentMethodLabel(group.payment_method)}</td>
+      ${hideSellerCol ? "" : `<td>${sellerLabel(group)}</td>`}
+      <td style="color:var(--text-muted);font-size:0.82rem">${esc(group.checkout_ref || group.notes || "—")}</td>
+      <td>${historyVoidAction(group)}</td>
+    </tr>`
+    )
+    .join("");
+
+  const otherRows = other
     .map(
       (t) => `
     <tr>
       <td>${formatDate(t.created_at)}</td>
-      <td>
-        ${productCell(t.product_name, esc(t.category))}
-      </td>
+      <td>${productCell(t.product_name, esc(t.category))}</td>
       <td>${typeBadge(t.type)}</td>
       <td>${formatTransactionQty(t)}</td>
       <td>${t.type === "sale" ? fmt.format(t.total_amount) : "—"}</td>
       <td>${t.type === "sale" ? paymentMethodLabel(t.payment_method) : "—"}</td>
       ${hideSellerCol ? "" : `<td>${t.type === "sale" ? sellerLabel(t) : "—"}</td>`}
       <td style="color:var(--text-muted);font-size:0.82rem">${esc(t.notes || "—")}</td>
+      <td>—</td>
     </tr>`
     )
     .join("");
+
+  tbody.innerHTML = saleRows + otherRows;
+}
+
+function openVoidSaleModal(checkoutRef) {
+  state.voidCheckoutRef = checkoutRef;
+  const label = document.getElementById("void-sale-ref-label");
+  if (label) label.textContent = `Reference: ${checkoutRef}`;
+  const pwd = document.getElementById("void-admin-password");
+  if (pwd) pwd.value = "";
+  showModal("void-sale-modal");
+  pwd?.focus();
+}
+
+async function submitVoidSale(e) {
+  e.preventDefault();
+  const checkoutRef = state.voidCheckoutRef;
+  const password = document.getElementById("void-admin-password")?.value || "";
+  if (!checkoutRef) return;
+
+  try {
+    const data = await api("/api/sales/void", {
+      method: "POST",
+      body: JSON.stringify({ checkout_ref: checkoutRef, admin_password: password }),
+    });
+    hideModal("void-sale-modal");
+    state.voidCheckoutRef = null;
+    toast(data.message || "Sale voided", "success");
+    await loadHistory();
+    if (!isSeller()) loadDashboard();
+  } catch (err) {
+    toast(err.message, "error");
+  }
 }
 
 // ── Sales Reports ──────────────────────────────────────────────────────────
@@ -2757,9 +2909,10 @@ function renderShiftDetail(shift, targets = {}) {
         </div>
         <div class="reconcile-grid shift-detail-stats">
           ${statCard("revenue", UI_ICONS.revenue, "Recorded", fmt.format(shift.total_sales), "System total")}
-          ${statCard("sales", UI_ICONS.sales, "Seller entered", fmt.format(shift.counted_cash), "All payments combined")}
-          ${statCard("month", UI_ICONS.chart, "Difference", fmt.format(Math.abs(shift.variance || 0)), shift.status_label === "balanced" ? "No difference" : status.text.toLowerCase())}
+          ${statCard("sales", UI_ICONS.sales, "Cash counted", fmt.format(shift.counted_cash), "Notes in till")}
+          ${statCard("month", UI_ICONS.chart, "Cash variance", fmt.format(Math.abs(shift.variance || 0)), shift.status_label === "balanced" ? "Balanced" : status.text.toLowerCase())}
         </div>
+        ${renderCashNotesBreakdown(shift.cash_notes) ? `<div class="cash-notes-breakdown shift-detail-notes"><h4>Cash notes</h4>${renderCashNotesBreakdown(shift.cash_notes)}</div>` : ""}
       </div>
     `;
   } else if (isOpen) {
@@ -2796,6 +2949,103 @@ async function selectShift(shiftId) {
 }
 
 // ── Admin: User Management ─────────────────────────────────────────────────
+
+let heartbeatTimer = null;
+const HEARTBEAT_MS = 5 * 60 * 1000;
+
+async function sendHeartbeat() {
+  if (document.hidden || !state.currentUser) return;
+  try {
+    await api("/api/auth/heartbeat", { method: "POST" });
+  } catch (_) {
+    // Ignore transient heartbeat failures
+  }
+}
+
+function initHeartbeat() {
+  if (!state.currentUser) return;
+  sendHeartbeat();
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) sendHeartbeat();
+  });
+}
+
+function populateAttendanceUserFilter(users) {
+  const select = document.getElementById("attendance-user-filter");
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML =
+    '<option value="">All users</option>' +
+    users
+      .map(
+        (u) =>
+          `<option value="${u.id}">${esc(u.display_name)} (${esc(ROLE_LABELS[u.role] || u.role)})</option>`
+      )
+      .join("");
+  if ([...select.options].some((o) => o.value === current)) select.value = current;
+}
+
+async function loadAttendance() {
+  if (!state.currentUser || state.currentUser.role !== "admin") return;
+
+  const fromEl = document.getElementById("attendance-from");
+  const toEl = document.getElementById("attendance-to");
+  const today = new Date().toISOString().slice(0, 10);
+  if (fromEl && !fromEl.value) fromEl.value = today;
+  if (toEl && !toEl.value) toEl.value = today;
+
+  showTableSkeleton("attendance-table-body", 7, 6);
+
+  try {
+    if (!state.users.length) {
+      state.users = await api("/api/admin/users");
+    }
+    populateAttendanceUserFilter(state.users);
+
+    const params = new URLSearchParams();
+    if (fromEl?.value) params.set("from", fromEl.value);
+    if (toEl?.value) params.set("to", toEl.value);
+    const userId = document.getElementById("attendance-user-filter")?.value;
+    if (userId) params.set("user_id", userId);
+
+    const data = await api(`/api/admin/attendance?${params}`);
+    renderAttendanceTable(data.sessions || []);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function renderAttendanceTable(sessions) {
+  const tbody = document.getElementById("attendance-table-body");
+  if (!tbody) return;
+
+  if (!sessions.length) {
+    tbody.innerHTML = `<tr><td colspan="7">${emptyState(UI_ICONS.clock, "No sessions", "No login sessions in this period.", true)}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = sessions
+    .map((s) => {
+      const status = s.is_active
+        ? '<span class="badge badge-stock ok">Active</span>'
+        : s.idle_before_logout
+          ? '<span class="badge badge-stock low">Idle gap</span>'
+          : `<span class="badge badge-muted">${esc(s.logout_reason || "Ended")}</span>`;
+      return `
+    <tr>
+      <td><strong>${esc(s.display_name)}</strong><br><span class="text-muted">${esc(s.username)}</span></td>
+      <td><span class="badge badge-category">${esc(ROLE_LABELS[s.role] || s.role)}</span></td>
+      <td>${formatDate(s.logged_in_at)}</td>
+      <td>${s.logged_out_at ? formatDate(s.logged_out_at) : "—"}</td>
+      <td>${formatDate(s.last_heartbeat_at)}</td>
+      <td>${esc(s.duration_label)}</td>
+      <td>${status}</td>
+    </tr>`;
+    })
+    .join("");
+}
 
 async function loadUsers() {
   if (!state.currentUser || state.currentUser.role !== "admin") return;
@@ -3148,7 +3398,15 @@ document.addEventListener("DOMContentLoaded", () => {
   initSalesReports();
   initHistoryShiftFilters();
   initPosShortcuts();
-  initShiftPresets();
+  initCashNoteInputs();
+  initHeartbeat();
+
+  document.getElementById("btn-attendance-refresh")?.addEventListener("click", () => {
+    loadAttendance().catch((e) => toast(e.message, "error"));
+  });
+  document.getElementById("attendance-user-filter")?.addEventListener("change", () => {
+    loadAttendance().catch((e) => toast(e.message, "error"));
+  });
 
   // Apply persisted posMode before any view renders
   applyRestoredPosMode();
@@ -3243,11 +3501,18 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("shift-start-form")?.addEventListener("submit", submitStartShift);
   document.getElementById("shift-close-form")?.addEventListener("submit", submitCloseShift);
   document.getElementById("btn-new-shift")?.addEventListener("click", showStartShiftForm);
-  document.getElementById("btn-show-close")?.addEventListener("click", () => {
+  document.getElementById("btn-show-close")?.addEventListener("click", async () => {
+    try {
+      await refreshSellerShift();
+    } catch (err) {
+      toast(err.message, "error");
+    }
     setShiftUiPhase("close");
-    document.getElementById("reconcile-cash-amount")?.focus();
+    document.getElementById("cash-note-5000")?.focus();
   });
   document.getElementById("btn-back-to-sell")?.addEventListener("click", () => setShiftUiPhase("sell"));
+
+  document.getElementById("void-sale-form")?.addEventListener("submit", submitVoidSale);
 
   document.getElementById("restock-form").addEventListener("submit", submitRestock);
   document.getElementById("adjust-form").addEventListener("submit", submitAdjust);
@@ -3311,6 +3576,7 @@ window.removeFromCart = removeFromCart;
 window.selectSalesDate = selectSalesDate;
 window.selectShift = selectShift;
 window.selectHistoryShift = selectHistoryShift;
+window.openVoidSaleModal = openVoidSaleModal;
 window.selectSellCategory = selectSellCategory;
 window.openEditUser = openEditUser;
 window.openDeleteUser = openDeleteUser;
