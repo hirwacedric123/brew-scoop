@@ -96,6 +96,15 @@ def verify_password(password_hash, password):
     return check_password_hash(password_hash, password)
 
 
+def verify_admin_password(db, password):
+    if not password:
+        return False
+    rows = db.execute(
+        "SELECT password_hash FROM users WHERE role = 'admin' AND is_active = 1"
+    ).fetchall()
+    return any(verify_password(row["password_hash"], password) for row in rows)
+
+
 def validate_user_payload(data, creating=False):
     username = (data.get("username") or "").strip()
     display_name = (data.get("display_name") or "").strip()
