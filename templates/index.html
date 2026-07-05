@@ -386,7 +386,7 @@
                 <input type="text" id="sell-notes" placeholder="Customer name, order ref...">
               </div>
               <button type="button" class="btn btn-primary btn-lg btn-block" id="btn-complete-sale">
-                Complete Checkout
+                Received Payment
               </button>
               <button type="button" class="btn btn-ghost btn-sm btn-block" id="btn-clear-cart">
                 Clear Cart
@@ -403,7 +403,7 @@
             <div>
               <p class="page-eyebrow page-eyebrow-caramel">Your shift</p>
               <h2>My Shift</h2>
-              <p id="reconcile-subtitle" class="shift-subtitle">Sell during your shift, then enter your total collected to see if it matches what was recorded</p>
+              <p id="reconcile-subtitle" class="shift-subtitle">Sell during your shift, then count your cash notes to close</p>
             </div>
           </div>
           <div class="shift-topbar-end">
@@ -422,7 +422,7 @@
               <div class="shift-hero-body">
                 <span class="shift-hero-badge" id="shift-hero-badge">Not started</span>
                 <h3 class="shift-hero-title" id="shift-hero-title">Ready to start your shift</h3>
-                <p class="shift-hero-desc" id="shift-hero-desc">When you finish, enter the total you collected — cash, MoMo, and Visa combined.</p>
+                <p class="shift-hero-desc" id="shift-hero-desc">When you finish, count the cash notes in your till. MoMo and Visa are recorded automatically.</p>
               </div>
             </div>
             <div class="shift-hero-aside" id="shift-hero-aside" hidden>
@@ -501,31 +501,72 @@
                 </div>
                 <div>
                   <h3>Close shift</h3>
-                  <p>Enter the total you think you sold — cash, MoMo, and Visa combined.</p>
+                  <p>Count the cash notes in your till. We compare that to cash sales recorded this shift.</p>
                 </div>
               </div>
               <div class="shift-tip" id="shift-close-tip">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <p>Add up <strong>everything you collected</strong> this shift: cash in hand + MoMo on your phone + any card payments. We compare that to what was recorded here.</p>
+                <p>Enter how many of each note you have. <strong>MoMo and Visa</strong> totals are shown below for reference — you do not count those as cash.</p>
+              </div>
+              <div class="shift-system-payments" id="shift-system-payments" hidden>
+                <h4>Recorded this shift (not cash)</h4>
+                <div class="shift-system-payments-grid">
+                  <div><span>MoMo</span><strong id="shift-close-momo">—</strong></div>
+                  <div><span>Visa</span><strong id="shift-close-visa">—</strong></div>
+                  <div><span>Cash sales recorded</span><strong id="shift-close-cash-expected">—</strong></div>
+                </div>
               </div>
               <form id="shift-close-form" class="shift-form">
-                <div class="form-group">
-                  <label for="reconcile-cash-amount">Total collected (all payments)</label>
-                  <p class="shift-field-hint">Cash + MoMo + Visa — your best estimate of total sales this shift.</p>
-                  <div class="shift-cash-input shift-cash-input-lg">
-                    <span class="shift-cash-prefix">RWF</span>
-                    <input type="number" id="reconcile-cash-amount" min="0" step="1" required placeholder="0" inputmode="numeric">
+                <div class="cash-notes-form">
+                  <div class="cash-notes-head">
+                    <label>Cash notes in hand</label>
+                    <p class="shift-field-hint">Rwandan franc notes — enter the quantity of each denomination.</p>
                   </div>
-                </div>
-                <div class="shift-presets" id="cash-presets">
-                  <button type="button" class="shift-preset" data-cash="10000">10,000</button>
-                  <button type="button" class="shift-preset" data-cash="25000">25,000</button>
-                  <button type="button" class="shift-preset" data-cash="50000">50,000</button>
-                  <button type="button" class="shift-preset" data-cash="100000">100,000</button>
+                  <div class="cash-notes-rows">
+                    <div class="cash-note-row">
+                      <span class="cash-note-label">5,000</span>
+                      <span class="cash-note-times">×</span>
+                      <input type="number" class="cash-note-input" id="cash-note-5000" min="0" step="1" placeholder="0" inputmode="numeric" data-denom="5000">
+                      <span class="cash-note-equals">=</span>
+                      <span class="cash-note-sub" id="cash-note-sub-5000">RWF 0</span>
+                    </div>
+                    <div class="cash-note-row">
+                      <span class="cash-note-label">2,000</span>
+                      <span class="cash-note-times">×</span>
+                      <input type="number" class="cash-note-input" id="cash-note-2000" min="0" step="1" placeholder="0" inputmode="numeric" data-denom="2000">
+                      <span class="cash-note-equals">=</span>
+                      <span class="cash-note-sub" id="cash-note-sub-2000">RWF 0</span>
+                    </div>
+                    <div class="cash-note-row">
+                      <span class="cash-note-label">1,000</span>
+                      <span class="cash-note-times">×</span>
+                      <input type="number" class="cash-note-input" id="cash-note-1000" min="0" step="1" placeholder="0" inputmode="numeric" data-denom="1000">
+                      <span class="cash-note-equals">=</span>
+                      <span class="cash-note-sub" id="cash-note-sub-1000">RWF 0</span>
+                    </div>
+                    <div class="cash-note-row">
+                      <span class="cash-note-label">500</span>
+                      <span class="cash-note-times">×</span>
+                      <input type="number" class="cash-note-input" id="cash-note-500" min="0" step="1" placeholder="0" inputmode="numeric" data-denom="500">
+                      <span class="cash-note-equals">=</span>
+                      <span class="cash-note-sub" id="cash-note-sub-500">RWF 0</span>
+                    </div>
+                    <div class="cash-note-row">
+                      <span class="cash-note-label">100</span>
+                      <span class="cash-note-times">×</span>
+                      <input type="number" class="cash-note-input" id="cash-note-100" min="0" step="1" placeholder="0" inputmode="numeric" data-denom="100">
+                      <span class="cash-note-equals">=</span>
+                      <span class="cash-note-sub" id="cash-note-sub-100">RWF 0</span>
+                    </div>
+                  </div>
+                  <div class="cash-notes-total-row">
+                    <span>Cash total</span>
+                    <strong id="cash-notes-total">RWF 0</strong>
+                  </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-close" id="btn-reconcile">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  Close &amp; check total
+                  Close &amp; check cash
                 </button>
               </form>
             </div>
@@ -842,6 +883,7 @@
                 <th>Payment</th>
                 <th>Seller</th>
                 <th>Notes</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="history-table-body"></tbody>
@@ -973,6 +1015,7 @@
         <div class="admin-tabs">
           <button type="button" class="admin-tab active" data-admin-tab="team">Team</button>
           <button type="button" class="admin-tab" data-admin-tab="categories">Categories</button>
+          <button type="button" class="admin-tab" data-admin-tab="attendance">Attendance</button>
         </div>
 
         <div id="admin-panel-team" class="admin-panel active">
@@ -1022,6 +1065,39 @@
                 </tr>
               </thead>
               <tbody id="categories-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="admin-panel-attendance" class="admin-panel" hidden>
+          <div class="admin-panel-header">
+            <div>
+              <h3>Attendance</h3>
+              <p class="text-muted admin-panel-desc">Login, logout, and active session times (heartbeat every 5 minutes).</p>
+            </div>
+            <div class="attendance-filters">
+              <input type="date" id="attendance-from" aria-label="From date">
+              <input type="date" id="attendance-to" aria-label="To date">
+              <select id="attendance-user-filter" aria-label="Filter by user">
+                <option value="">All users</option>
+              </select>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-attendance-refresh">Refresh</button>
+            </div>
+          </div>
+          <div class="table-wrap table-premium">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Logged in</th>
+                  <th>Logged out</th>
+                  <th>Last heartbeat</th>
+                  <th>Duration</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="attendance-table-body"></tbody>
             </table>
           </div>
         </div>
@@ -1245,17 +1321,21 @@
     </div>
   </div>
 
-  <!-- Sale Success Modal -->
-  <div class="modal-overlay" id="sale-success-modal" hidden>
+  <div class="modal-overlay" id="void-sale-modal" hidden>
     <div class="modal">
-      <div class="sale-success">
-        <div class="success-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      <h3>Void Sale</h3>
+      <p class="text-muted" id="void-sale-ref-label"></p>
+      <p class="shift-field-hint">Stock will be restored. This cannot be undone.</p>
+      <form id="void-sale-form">
+        <div class="form-group">
+          <label for="void-admin-password">Admin password</label>
+          <input type="password" id="void-admin-password" required autocomplete="current-password">
         </div>
-        <h3>Checkout Complete!</h3>
-        <div id="sale-success-details"></div>
-        <button type="button" class="btn btn-primary btn-block" data-close-modal>New Sale</button>
-      </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
+          <button type="submit" class="btn btn-danger">Void sale</button>
+        </div>
+      </form>
     </div>
   </div>
 
