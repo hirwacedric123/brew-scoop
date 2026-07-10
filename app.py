@@ -273,6 +273,16 @@ def _migrate_db(db):
             db.execute(
                 f"ALTER TABLE seller_shifts ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"
             )
+    for col in (
+        "counted_momo",
+        "counted_visa",
+        "expected_momo",
+        "expected_visa",
+        "momo_variance",
+        "visa_variance",
+    ):
+        if col not in shift_cols:
+            db.execute(f"ALTER TABLE seller_shifts ADD COLUMN {col} REAL")
 
     tx_cols = {row[1] for row in db.execute("PRAGMA table_info(transactions)").fetchall()}
     if "voided_at" not in tx_cols:
@@ -1668,6 +1678,44 @@ def _shift_sales_for_response(db, shift_id):
     return [row_to_transaction(r) for r in rows]
 
 
+def _parse_counted_amount(data, key, label):
+    if not isinstance(data, dict):
+        return None, f"Invalid {label} amount"
+    raw = data.get(key)
+    if raw is None or raw == "":
+        return 0.0, None
+    try:
+        amount = float(raw)
+    except (TypeError, ValueError):
+        return None, f"Invalid {label} amount"
+    if amount < 0:
+        return None, f"{label} amount cannot be negative"
+    return round(amount, 2), None
+
+
+def _shift_overall_status(cash_variance, momo_variance, visa_variance):
+    variances = [cash_variance or 0, momo_variance or 0, visa_variance or 0]
+    if all(v == 0 for v in variances):
+        return "balanced"
+    if any(v < 0 for v in variances):
+        return "short"
+    return "over"
+
+
+def _payment_reconcile_message(label, counted, expected, variance):
+    if variance == 0:
+        return f"{label}: {fmt_rwf(counted)} matches recorded sales."
+    if variance > 0:
+        return (
+            f"{label}: counted {fmt_rwf(counted)} — "
+            f"{fmt_rwf(abs(variance))} over the {fmt_rwf(expected)} recorded."
+        )
+    return (
+        f"{label}: counted {fmt_rwf(counted)} — "
+        f"short by {fmt_rwf(abs(variance))} vs {fmt_rwf(expected)} recorded."
+    )
+
+
 def _row_to_shift(row, include_close=False):
     data = {
         "id": row["id"],
@@ -1675,20 +1723,31 @@ def _row_to_shift(row, include_close=False):
         "opened_at": row["opened_at"],
     }
     if include_close or row["status"] == "closed":
+        cash_variance = round(row["variance"] or 0, 2)
+        momo_variance = round(row["momo_variance"] or 0, 2)
+        visa_variance = round(row["visa_variance"] or 0, 2)
         data.update({
             "closed_at": row["closed_at"],
             "counted_cash": round(row["counted_cash"] or 0, 2),
             "counted_total": round(row["counted_cash"] or 0, 2),
             "expected_cash": round(row["expected_cash"] or 0, 2),
             "expected_total": round(row["expected_cash"] or 0, 2),
-            "variance": round(row["variance"] or 0, 2),
+            "variance": cash_variance,
+            "counted_momo": round(row["counted_momo"] or 0, 2),
+            "expected_momo": round(row["expected_momo"] or row["momo_sales"] or 0, 2),
+            "momo_variance": momo_variance,
+            "counted_visa": round(row["counted_visa"] or 0, 2),
+            "expected_visa": round(row["expected_visa"] or row["visa_sales"] or 0, 2),
+            "visa_variance": visa_variance,
             "total_sales": round(row["total_sales"] or 0, 2),
             "cash_sales": round(row["cash_sales"] or 0, 2),
             "momo_sales": round(row["momo_sales"] or 0, 2),
             "visa_sales": round(row["visa_sales"] or 0, 2),
             "units_sold": row["units_sold"] or 0,
             "sale_count": row["sale_count"] or 0,
-            "status_label": _shift_variance_status(row["variance"] or 0),
+            "status_label": _shift_overall_status(
+                cash_variance, momo_variance, visa_variance
+            ),
             "cash_notes": _cash_notes_from_row(row),
         })
     return data
@@ -1714,19 +1773,33 @@ def fmt_rwf(amount):
 
 
 def _shift_close_message(row):
-    variance = row["variance"] or 0
-    if variance == 0:
-        return "Your cash count matches the cash sales recorded for this shift."
-
-    if variance > 0:
-        return (
-            f"You counted {fmt_rwf(row['counted_cash'] or 0)} in cash — "
-            f"{fmt_rwf(abs(variance))} more than the {fmt_rwf(row['expected_cash'] or 0)} cash sales recorded."
-        )
-    return (
-        f"You counted {fmt_rwf(row['counted_cash'] or 0)} in cash — "
-        f"short by {fmt_rwf(abs(variance))} compared to the {fmt_rwf(row['expected_cash'] or 0)} cash sales recorded."
-    )
+    cash_variance = row["variance"] or 0
+    momo_variance = row["momo_variance"] or 0
+    visa_variance = row["visa_variance"] or 0
+    parts = [
+        _payment_reconcile_message(
+            "Cash",
+            row["counted_cash"] or 0,
+            row["expected_cash"] or 0,
+            cash_variance,
+        ),
+        _payment_reconcile_message(
+            "MoMo",
+            row["counted_momo"] or 0,
+            row["expected_momo"] or row["momo_sales"] or 0,
+            momo_variance,
+        ),
+        _payment_reconcile_message(
+            "Visa",
+            row["counted_visa"] or 0,
+            row["expected_visa"] or row["visa_sales"] or 0,
+            visa_variance,
+        ),
+    ]
+    overall = _shift_overall_status(cash_variance, momo_variance, visa_variance)
+    if overall == "balanced":
+        return "All payment counts match the sales recorded for this shift."
+    return " ".join(parts)
 
 
 @app.route("/api/seller/shift", methods=["GET"])
@@ -1791,6 +1864,13 @@ def seller_shift_close():
     if error:
         return jsonify({"error": error}), 400
 
+    counted_momo, error = _parse_counted_amount(data, "counted_momo", "MoMo")
+    if error:
+        return jsonify({"error": error}), 400
+    counted_visa, error = _parse_counted_amount(data, "counted_visa", "Visa")
+    if error:
+        return jsonify({"error": error}), 400
+
     counted_cash = _cash_total_from_notes(cash_notes)
 
     db = get_db()
@@ -1801,7 +1881,11 @@ def seller_shift_close():
 
     sales = _seller_sales_for_shift(db, shift["id"])
     expected_cash = sales["cash_sales"]
-    variance = round(counted_cash - expected_cash, 2)
+    expected_momo = sales["momo_sales"]
+    expected_visa = sales["visa_sales"]
+    cash_variance = round(counted_cash - expected_cash, 2)
+    momo_variance = round(counted_momo - expected_momo, 2)
+    visa_variance = round(counted_visa - expected_visa, 2)
     ts = now_iso()
 
     db.execute(
@@ -1811,6 +1895,12 @@ def seller_shift_close():
            counted_cash = ?,
            expected_cash = ?,
            variance = ?,
+           counted_momo = ?,
+           expected_momo = ?,
+           momo_variance = ?,
+           counted_visa = ?,
+           expected_visa = ?,
+           visa_variance = ?,
            total_sales = ?,
            cash_sales = ?,
            momo_sales = ?,
@@ -1827,7 +1917,13 @@ def seller_shift_close():
             ts,
             counted_cash,
             expected_cash,
-            variance,
+            cash_variance,
+            counted_momo,
+            expected_momo,
+            momo_variance,
+            counted_visa,
+            expected_visa,
+            visa_variance,
             sales["total_sales"],
             sales["cash_sales"],
             sales["momo_sales"],
@@ -2183,17 +2279,28 @@ def _shift_report_row(db, row):
         "closed_at": row["closed_at"],
     }
     if row["status"] == "closed":
+        cash_variance = round(row["variance"] or 0, 2)
+        momo_variance = round(row["momo_variance"] or 0, 2)
+        visa_variance = round(row["visa_variance"] or 0, 2)
         data.update({
             "counted_cash": round(row["counted_cash"] or 0, 2),
             "expected_cash": round(row["expected_cash"] or 0, 2),
-            "variance": round(row["variance"] or 0, 2),
+            "variance": cash_variance,
+            "counted_momo": round(row["counted_momo"] or 0, 2),
+            "expected_momo": round(row["expected_momo"] or row["momo_sales"] or 0, 2),
+            "momo_variance": momo_variance,
+            "counted_visa": round(row["counted_visa"] or 0, 2),
+            "expected_visa": round(row["expected_visa"] or row["visa_sales"] or 0, 2),
+            "visa_variance": visa_variance,
             "total_sales": round(row["total_sales"] or 0, 2),
             "cash_sales": round(row["cash_sales"] or 0, 2),
             "momo_sales": round(row["momo_sales"] or 0, 2),
             "visa_sales": round(row["visa_sales"] or 0, 2),
             "units_sold": row["units_sold"] or 0,
             "sale_count": row["sale_count"] or 0,
-            "status_label": _shift_variance_status(row["variance"] or 0),
+            "status_label": _shift_overall_status(
+                cash_variance, momo_variance, visa_variance
+            ),
             "cash_notes": _cash_notes_from_row(row),
         })
     else:

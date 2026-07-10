@@ -1886,7 +1886,75 @@ function clearCashNoteInputs() {
     const input = document.getElementById(`cash-note-${denom}`);
     if (input) input.value = "";
   }
+  for (const id of ["counted-momo", "counted-visa"]) {
+    const input = document.getElementById(id);
+    if (input) input.value = "";
+  }
   updateCashNotesTotal();
+}
+
+function readCountedPaymentAmount(id) {
+  const input = document.getElementById(id);
+  const value = parseFloat(input?.value);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function paymentVarianceStatus(variance) {
+  if (!variance || variance === 0) return { text: "Balanced", cls: "balanced" };
+  if (variance > 0) return { text: "Over", cls: "over" };
+  return { text: "Short", cls: "short" };
+}
+
+function renderPaymentReconcileCards(shift) {
+  const rows = [
+    {
+      label: "Cash",
+      counted: shift.counted_cash ?? shift.counted_total ?? 0,
+      expected: shift.expected_cash ?? shift.cash_sales ?? 0,
+      variance: shift.variance ?? 0,
+      cls: "cash",
+    },
+    {
+      label: "MoMo",
+      counted: shift.counted_momo ?? 0,
+      expected: shift.expected_momo ?? shift.momo_sales ?? 0,
+      variance: shift.momo_variance ?? 0,
+      cls: "momo",
+    },
+    {
+      label: "Visa",
+      counted: shift.counted_visa ?? 0,
+      expected: shift.expected_visa ?? shift.visa_sales ?? 0,
+      variance: shift.visa_variance ?? 0,
+      cls: "visa",
+    },
+  ];
+
+  return `
+    <div class="payment-reconcile-grid">
+      ${rows
+        .map((row) => {
+          const status = paymentVarianceStatus(row.variance);
+          const varianceLine =
+            row.variance === 0
+              ? ""
+              : `<div class="payment-reconcile-var ${status.cls}"><span>Variance</span><strong>${row.variance > 0 ? "+" : "−"}${fmt.format(Math.abs(row.variance))}</strong></div>`;
+          return `
+            <div class="payment-reconcile-card ${status.cls}">
+              <div class="payment-reconcile-head">
+                <span class="shift-payment-dot ${row.cls}"></span>
+                <strong>${row.label}</strong>
+                <span class="payment-reconcile-chip ${status.cls}">${status.text}</span>
+              </div>
+              <div class="payment-reconcile-lines">
+                <div><span>Counted</span><strong>${fmt.format(row.counted)}</strong></div>
+                <div><span>Recorded</span><strong>${fmt.format(row.expected)}</strong></div>
+                ${varianceLine}
+              </div>
+            </div>`;
+        })
+        .join("")}
+    </div>`;
 }
 
 function renderCashNotesBreakdown(cashNotes) {
@@ -1909,7 +1977,7 @@ function setShiftUiPhase(phase) {
     if (descEl) {
       descEl.textContent =
         shiftUiPhase === "close"
-          ? `Started ${startedAt}. Count your cash notes to finish.`
+          ? `Started ${startedAt}. Enter what you collected for cash, MoMo, and Visa.`
           : `Started ${startedAt}. Head to Sell to record orders — close when you're done.`;
     }
   }
@@ -1933,8 +2001,8 @@ function renderShiftOpenPhase() {
   }
   if (subtitle) {
     subtitle.textContent = closing
-      ? "Count the cash in your till — recorded sales stay hidden until you submit."
-      : "Sell during your shift, then count your cash notes to close.";
+      ? "Enter what you collected for each payment method — recorded sales stay hidden until you submit."
+      : "Sell during your shift, then reconcile cash, MoMo, and Visa to close.";
   }
   updateShiftSteps(closing ? "close" : "sell");
 }
@@ -2140,23 +2208,16 @@ function renderShiftSummary(shift, message) {
   if (!resultEl || !shift) return;
 
   const status = reconcileStatusLabel(shift.status_label || "balanced");
-  const varianceAbs = fmt.format(Math.abs(shift.variance || 0));
-  const expectedCash = shift.expected_cash ?? shift.cash_sales ?? 0;
-  const counted = shift.counted_total ?? shift.counted_cash;
   const varianceLine =
     shift.status_label === "balanced"
-      ? "Your cash count matches the cash sales recorded for this shift."
-      : shift.status_label === "over"
-        ? `You counted ${varianceAbs} more cash than recorded.`
-        : `You are short by ${varianceAbs} in cash compared to what was recorded.`;
+      ? "All payment counts match the sales recorded for this shift."
+      : "One or more payment methods do not match recorded sales.";
 
   const payTotal = (shift.cash_sales || 0) + (shift.momo_sales || 0) + (shift.visa_sales || 0);
   const varianceChip =
     shift.status_label === "balanced"
-      ? "Cash balanced"
-      : shift.status_label === "over"
-        ? `+${varianceAbs}`
-        : `−${varianceAbs}`;
+      ? "All balanced"
+      : status.text;
 
   const notesHtml = renderCashNotesBreakdown(shift.cash_notes);
   const notesSection = notesHtml
@@ -2176,9 +2237,11 @@ function renderShiftSummary(shift, message) {
         <div class="shift-result-body">
           <div class="reconcile-grid">
             ${statCard("revenue", UI_ICONS.revenue, "Total sales", fmt.format(shift.total_sales), "All payment types")}
-            ${statCard("sales", UI_ICONS.sales, "Cash counted", fmt.format(counted), "Notes in your till")}
-            ${statCard("month", UI_ICONS.chart, "Cash expected", fmt.format(expectedCash), "Cash sales recorded")}
+            ${statCard("sales", UI_ICONS.sales, "Line items", fmtNum.format(shift.sale_count || 0), "Sales recorded")}
+            ${statCard("month", UI_ICONS.chart, "Units sold", fmtNum.format(shift.units_sold || 0), "This shift")}
           </div>
+          <h4>Payment reconciliation</h4>
+          ${renderPaymentReconcileCards(shift)}
           ${notesSection}
           <div class="reconcile-payments">
             <h4>Recorded breakdown</h4>
@@ -2239,7 +2302,7 @@ function renderShiftView() {
       "open",
       "Your shift is live",
       shiftUiPhase === "close"
-        ? `Started ${startedAt}. Count your cash notes to finish.`
+        ? `Started ${startedAt}. Enter what you collected for cash, MoMo, and Visa.`
         : `Started ${startedAt}. Head to Sell to record orders — close when you're done.`,
       "In progress",
       "open"
@@ -2307,16 +2370,18 @@ async function submitCloseShift(e) {
 
   const btn = document.getElementById("btn-reconcile");
   const cashNotes = readCashNotesFromForm();
-  const countedCash = CASH_DENOMS.reduce(
-    (sum, denom) => sum + denom * (cashNotes[String(denom)] || 0),
-    0
-  );
+  const countedMomo = readCountedPaymentAmount("counted-momo");
+  const countedVisa = readCountedPaymentAmount("counted-visa");
 
   btn.disabled = true;
   try {
     const data = await api("/api/seller/shift/close", {
       method: "POST",
-      body: JSON.stringify({ cash_notes: cashNotes }),
+      body: JSON.stringify({
+        cash_notes: cashNotes,
+        counted_momo: countedMomo,
+        counted_visa: countedVisa,
+      }),
     });
     state.sellerShift = {
       has_open_shift: false,
@@ -3236,10 +3301,8 @@ function renderShiftDetail(shift, targets = {}) {
   if (!isOpen && status) {
     const varianceChip =
       shift.status_label === "balanced"
-        ? "Balanced"
-        : shift.status_label === "over"
-          ? `+${fmt.format(Math.abs(shift.variance || 0))}`
-          : `−${fmt.format(Math.abs(shift.variance || 0))}`;
+        ? "All balanced"
+        : status.text;
     reconcileSection = `
       <div class="shift-detail-reconcile ${status.cls}">
         <div class="shift-detail-reconcile-head">
@@ -3248,9 +3311,11 @@ function renderShiftDetail(shift, targets = {}) {
         </div>
         <div class="reconcile-grid shift-detail-stats">
           ${statCard("revenue", UI_ICONS.revenue, "Recorded", fmt.format(shift.total_sales), "System total")}
-          ${statCard("sales", UI_ICONS.sales, "Cash counted", fmt.format(shift.counted_cash), "Notes in till")}
-          ${statCard("month", UI_ICONS.chart, "Cash variance", fmt.format(Math.abs(shift.variance || 0)), shift.status_label === "balanced" ? "Balanced" : status.text.toLowerCase())}
+          ${statCard("sales", UI_ICONS.sales, "Line items", fmtNum.format(shift.sale_count || 0), "Sales recorded")}
+          ${statCard("month", UI_ICONS.chart, "Units sold", fmtNum.format(shift.units_sold || 0), "This shift")}
         </div>
+        <h4>Payment reconciliation</h4>
+        ${renderPaymentReconcileCards(shift)}
         ${renderCashNotesBreakdown(shift.cash_notes) ? `<div class="cash-notes-breakdown shift-detail-notes"><h4>Cash notes</h4>${renderCashNotesBreakdown(shift.cash_notes)}</div>` : ""}
       </div>
     `;

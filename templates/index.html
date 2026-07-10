@@ -403,7 +403,7 @@
             <div>
               <p class="page-eyebrow page-eyebrow-caramel">Your shift</p>
               <h2>My Shift</h2>
-              <p id="reconcile-subtitle" class="shift-subtitle">Sell during your shift, then count your cash notes to close</p>
+              <p id="reconcile-subtitle" class="shift-subtitle">Sell during your shift, then reconcile cash, MoMo, and Visa to close</p>
             </div>
           </div>
           <div class="shift-topbar-end">
@@ -422,7 +422,7 @@
               <div class="shift-hero-body">
                 <span class="shift-hero-badge" id="shift-hero-badge">Not started</span>
                 <h3 class="shift-hero-title" id="shift-hero-title">Ready to start your shift</h3>
-                <p class="shift-hero-desc" id="shift-hero-desc">When you finish, count the cash notes in your till. MoMo and Visa are recorded automatically.</p>
+                <p class="shift-hero-desc" id="shift-hero-desc">When you finish, enter what you collected in cash, MoMo, and Visa. We compare it to recorded sales after you close.</p>
               </div>
             </div>
             <div class="shift-hero-aside" id="shift-hero-aside" hidden>
@@ -501,12 +501,12 @@
                 </div>
                 <div>
                   <h3>Close shift</h3>
-                  <p>Count the cash notes in your till. Recorded sales stay hidden until after you submit.</p>
+                  <p>Enter what you collected for each payment method. Recorded sales stay hidden until after you submit.</p>
                 </div>
               </div>
               <div class="shift-tip" id="shift-close-tip">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <p>Enter how many of each note you have. We compare your count to recorded sales only after you close.</p>
+                <p>Count your cash notes and enter the MoMo and Visa totals you received. We compare each amount to recorded sales only after you close.</p>
               </div>
               <form id="shift-close-form" class="shift-form">
                 <div class="cash-notes-form">
@@ -556,9 +556,29 @@
                     <strong id="cash-notes-total">RWF 0</strong>
                   </div>
                 </div>
+
+                <div class="payment-count-form">
+                  <div class="payment-count-head">
+                    <label>MoMo &amp; Visa received</label>
+                    <p class="shift-field-hint">Enter the total amount you received for each digital payment method.</p>
+                  </div>
+                  <div class="payment-count-rows">
+                    <div class="payment-count-row momo">
+                      <span class="shift-payment-dot momo"></span>
+                      <label for="counted-momo">MoMo total</label>
+                      <input type="number" class="payment-count-input" id="counted-momo" min="0" step="1" placeholder="0" inputmode="numeric">
+                    </div>
+                    <div class="payment-count-row visa">
+                      <span class="shift-payment-dot visa"></span>
+                      <label for="counted-visa">Visa total</label>
+                      <input type="number" class="payment-count-input" id="counted-visa" min="0" step="1" placeholder="0" inputmode="numeric">
+                    </div>
+                  </div>
+                </div>
+
                 <button type="submit" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-close" id="btn-reconcile">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  Close &amp; check cash
+                  Close &amp; reconcile
                 </button>
               </form>
             </div>
