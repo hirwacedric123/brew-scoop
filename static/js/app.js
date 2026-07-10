@@ -1911,10 +1911,8 @@ function updateShiftCloseSystemPayments() {
   panel.hidden = false;
   const momoEl = document.getElementById("shift-close-momo");
   const visaEl = document.getElementById("shift-close-visa");
-  const cashEl = document.getElementById("shift-close-cash-expected");
   if (momoEl) momoEl.textContent = fmt.format(live.momo_sales || 0);
   if (visaEl) visaEl.textContent = fmt.format(live.visa_sales || 0);
-  if (cashEl) cashEl.textContent = fmt.format(live.cash_sales || 0);
 }
 
 function setShiftUiPhase(phase) {
@@ -1950,7 +1948,7 @@ function renderShiftOpenPhase() {
   }
   if (subtitle) {
     subtitle.textContent = closing
-      ? "Count the cash notes in your till and compare to recorded cash sales."
+      ? "Count the cash in your till — recorded cash stays hidden until you submit."
       : "Sell during your shift, then count your cash notes to close.";
   }
   updateShiftCloseSystemPayments();
