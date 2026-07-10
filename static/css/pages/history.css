@@ -122,6 +122,14 @@ body.seller-reports-mode #view-history .data-table thead th:nth-child(7) {
   color: var(--danger, #c0392b);
 }
 
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 @media (max-width: 900px) {
   .history-shifts-layout {
     grid-template-columns: 1fr;

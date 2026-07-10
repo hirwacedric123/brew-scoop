@@ -32,6 +32,7 @@ const state = {
   deleteUserId: null,
   deleteCategoryId: null,
   voidCheckoutRef: null,
+  historySaleGroups: null,
   currentUser: window.CURRENT_USER || null,
   sellerShift: null,
 };
@@ -1457,6 +1458,7 @@ async function completeCheckout() {
 
   const btn = document.getElementById("btn-complete-sale");
   btn.disabled = true;
+  const notes = document.getElementById("sell-notes").value;
 
   try {
     const result = await api("/api/sales/checkout", {
@@ -1466,7 +1468,7 @@ async function completeCheckout() {
           product_id: c.product_id,
           quantity: c.quantity,
         })),
-        notes: document.getElementById("sell-notes").value,
+        notes,
         payment_method: state.paymentMethod,
       }),
     });
@@ -1480,6 +1482,25 @@ async function completeCheckout() {
     clearCart();
     await loadSellView();
     if (!isSeller()) loadDashboard();
+
+    showInvoice({
+      checkout_ref: result.checkout_ref,
+      created_at: new Date().toISOString(),
+      payment_method: result.payment_method,
+      payment_label: paymentLabel,
+      seller_name: state.currentUser?.display_name || state.currentUser?.username || "—",
+      notes: (notes || "").trim() || null,
+      total_amount: result.total_amount,
+      total_units: result.total_units,
+      is_voided: false,
+      items: (result.items || []).map((item) => ({
+        product_name: item.product?.name || "Item",
+        category: item.product?.category || "",
+        quantity: item.quantity_sold,
+        unit_price: item.unit_price,
+        total_amount: item.total_amount,
+      })),
+    });
   } catch (err) {
     toast(err.message, "error");
     await loadSellView();
@@ -1487,6 +1508,333 @@ async function completeCheckout() {
     btn.disabled = false;
   }
 }
+
+function invoiceFromHistoryGroup(group) {
+  return {
+    checkout_ref: group.checkout_ref,
+    created_at: group.created_at,
+    payment_method: group.payment_method,
+    payment_label: paymentMethodLabel(group.payment_method),
+    seller_name: group.seller_name || state.currentUser?.display_name || "—",
+    notes: group.notes || null,
+    total_amount: group.total,
+    total_units: group.units,
+    is_voided: !!group.is_voided,
+    items: (group.items || []).map((item) => ({
+      product_name: item.product_name,
+      category: item.category || "",
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      total_amount: item.total_amount,
+    })),
+  };
+}
+
+function showInvoice(invoice) {
+  const meta = document.getElementById("invoice-meta");
+  const lines = document.getElementById("invoice-lines");
+  const totals = document.getElementById("invoice-totals");
+  const notesEl = document.getElementById("invoice-notes");
+  const voidBanner = document.getElementById("invoice-voided-banner");
+  if (!meta || !lines || !totals) return;
+
+  const seller = invoice.seller_name || "—";
+  const payment = invoice.payment_label || paymentMethodLabel(invoice.payment_method);
+  const when = invoice.created_at ? formatDate(invoice.created_at) : formatDate(new Date().toISOString());
+
+  if (voidBanner) voidBanner.hidden = !invoice.is_voided;
+
+  meta.innerHTML = `
+    <div>
+      <dt>Invoice #</dt>
+      <dd>${esc(invoice.checkout_ref || "—")}</dd>
+    </div>
+    <div>
+      <dt>Date</dt>
+      <dd>${esc(when)}</dd>
+    </div>
+    <div>
+      <dt>Seller</dt>
+      <dd>${esc(seller)}</dd>
+    </div>
+    <div>
+      <dt>Payment</dt>
+      <dd>${esc(payment)}</dd>
+    </div>
+  `;
+
+  lines.innerHTML = (invoice.items || [])
+    .map(
+      (item) => `
+    <tr>
+      <td>
+        <span class="item-name">${esc(item.product_name)}</span>
+        ${item.category ? `<span class="item-cat">${esc(item.category)}</span>` : ""}
+      </td>
+      <td class="num">${fmtNum.format(item.quantity)}</td>
+      <td class="num">${fmt.format(item.unit_price)}</td>
+      <td class="num">${fmt.format(item.total_amount)}</td>
+    </tr>`
+    )
+    .join("");
+
+  totals.innerHTML = `
+    <div class="invoice-totals-row">
+      <span>Items</span>
+      <span>${fmtNum.format(invoice.total_units || 0)}</span>
+    </div>
+    <div class="invoice-totals-row grand">
+      <span>Total</span>
+      <span>${fmt.format(invoice.total_amount || 0)}</span>
+    </div>
+  `;
+
+  if (invoice.notes && notesEl) {
+    notesEl.hidden = false;
+    notesEl.innerHTML = `<strong>Notes:</strong> ${esc(invoice.notes)}`;
+  } else if (notesEl) {
+    notesEl.hidden = true;
+    notesEl.textContent = "";
+  }
+
+  showModal("invoice-modal");
+}
+
+function printInvoice() {
+  const area = document.getElementById("invoice-print-area");
+  if (!area) return;
+
+  const existing = document.getElementById("invoice-print-root");
+  if (existing) existing.remove();
+
+  const logoSrc = area.querySelector(".invoice-logo")?.getAttribute("src") || "/static/img/logo.png";
+  const clone = area.cloneNode(true);
+  const logo = clone.querySelector(".invoice-logo");
+  if (logo) {
+    logo.setAttribute("src", new URL(logoSrc, window.location.origin).href);
+  }
+
+  const root = document.createElement("div");
+  root.id = "invoice-print-root";
+  root.innerHTML = `
+    <style>
+      #invoice-print-root { display: none; }
+      @media print {
+        @page {
+          size: A5 portrait;
+          margin: 8mm;
+        }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #fff !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+        body > *:not(#invoice-print-root) {
+          display: none !important;
+        }
+        #invoice-print-root {
+          display: block !important;
+          width: 100%;
+          max-width: 118mm;
+          margin: 0 auto;
+          color: #2c1810;
+          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+          font-size: 10pt;
+          line-height: 1.35;
+        }
+        #invoice-print-root .invoice {
+          border: 1px solid #e0d5c8;
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        #invoice-print-root .invoice-brand {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          gap: 6px;
+          margin: 0;
+          padding: 12px 12px 10px;
+          background: #faf6f1;
+          border-bottom: 1px solid #e8ddd0;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        #invoice-print-root .invoice-logo {
+          width: 72px;
+          height: auto;
+          max-height: 56px;
+          object-fit: contain;
+          display: block;
+        }
+        #invoice-print-root .invoice-brand-text h2 {
+          margin: 0;
+          font-family: Fraunces, Georgia, serif;
+          font-size: 13pt;
+          font-weight: 600;
+          color: #2c1810;
+        }
+        #invoice-print-root .invoice-brand-text p {
+          margin: 2px 0 0;
+          font-size: 7.5pt;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #7a6a5e;
+          font-weight: 600;
+        }
+        #invoice-print-root .invoice-body {
+          padding: 10px 12px 12px;
+        }
+        #invoice-print-root .invoice-meta {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 6px 10px;
+          margin: 0 0 10px;
+          padding: 7px 8px;
+          background: #faf6f1;
+          border: 1px solid #e8ddd0;
+          border-radius: 4px;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        #invoice-print-root .invoice-meta dt {
+          margin: 0;
+          font-size: 7pt;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #7a6a5e;
+          font-weight: 600;
+        }
+        #invoice-print-root .invoice-meta dd {
+          margin: 1px 0 0;
+          font-size: 9pt;
+          font-weight: 600;
+          word-break: break-word;
+        }
+        #invoice-print-root .invoice-voided-banner {
+          margin: 0 0 8px;
+          padding: 4px 6px;
+          border: 1px solid #c45c4a;
+          color: #c45c4a;
+          font-size: 8.5pt;
+          font-weight: 600;
+          text-align: center;
+          border-radius: 4px;
+        }
+        #invoice-print-root .invoice-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 0 0 10px;
+          font-size: 9pt;
+        }
+        #invoice-print-root .invoice-table th {
+          text-align: left;
+          font-size: 7pt;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #7a6a5e;
+          padding: 3px 2px;
+          border-bottom: 1.5px solid #e8ddd0;
+        }
+        #invoice-print-root .invoice-table td {
+          padding: 5px 2px;
+          border-bottom: 1px solid #f0e8dc;
+          vertical-align: top;
+        }
+        #invoice-print-root .invoice-table tbody tr:last-child td {
+          border-bottom: none;
+        }
+        #invoice-print-root .invoice-table .num {
+          text-align: right;
+          white-space: nowrap;
+        }
+        #invoice-print-root .item-name { font-weight: 600; }
+        #invoice-print-root .item-cat {
+          display: block;
+          font-size: 7.5pt;
+          font-weight: 500;
+          color: #7a6a5e;
+        }
+        #invoice-print-root .invoice-totals {
+          background: #f5e6d3;
+          border: 1px solid #e8ddd0;
+          border-radius: 4px;
+          padding: 7px 9px;
+          margin: 0 0 8px;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        #invoice-print-root .invoice-totals-row {
+          display: flex;
+          justify-content: space-between;
+          gap: 8px;
+          font-size: 9pt;
+          padding: 1px 0;
+          color: #5d4037;
+        }
+        #invoice-print-root .invoice-totals-row.grand {
+          margin-top: 4px;
+          padding-top: 5px;
+          border-top: 1.5px solid #c4a574;
+          font-family: Fraunces, Georgia, serif;
+          font-size: 12pt;
+          font-weight: 600;
+          color: #2c1810;
+        }
+        #invoice-print-root .invoice-notes {
+          margin: 0 0 8px;
+          padding: 5px 7px;
+          border-left: 3px solid #c4a574;
+          background: #faf6f1;
+          font-size: 8pt;
+          color: #5d4037;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        #invoice-print-root .invoice-footer {
+          margin: 0;
+          padding-top: 7px;
+          border-top: 1px dashed #e8ddd0;
+          text-align: center;
+          font-size: 8pt;
+          color: #a89888;
+        }
+      }
+    </style>
+  `;
+  root.appendChild(clone);
+  document.body.appendChild(root);
+
+  const cleanup = () => {
+    root.remove();
+    window.removeEventListener("afterprint", cleanup);
+  };
+  window.addEventListener("afterprint", cleanup);
+
+  // Ensure logo is loaded before printing
+  const printLogo = root.querySelector(".invoice-logo");
+  const doPrint = () => {
+    window.print();
+    setTimeout(cleanup, 1000);
+  };
+  if (printLogo && !printLogo.complete) {
+    printLogo.onload = doPrint;
+    printLogo.onerror = doPrint;
+  } else {
+    doPrint();
+  }
+}
+
+window.showInvoiceFromHistory = function showInvoiceFromHistory(checkoutRef) {
+  const group = state.historySaleGroups?.get(checkoutRef);
+  if (!group) {
+    toast("Invoice not found for this sale", "error");
+    return;
+  }
+  showInvoice(invoiceFromHistoryGroup(group));
+};
 
 function quickSell(id) {
   const product = state.products.find((p) => p.id === id);
@@ -2453,13 +2801,19 @@ function historySaleProductCell(group) {
 }
 
 function historyVoidAction(group) {
+  const canInvoice = group.checkout_ref && !group.checkout_ref.startsWith("line-");
+  const invoiceBtn = canInvoice
+    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="showInvoiceFromHistory(${JSON.stringify(group.checkout_ref)})">Invoice</button>`
+    : "";
+
   if (group.is_voided) {
-    return '<span class="badge badge-muted">Voided</span>';
+    return `<div class="history-actions">${invoiceBtn}<span class="badge badge-muted">Voided</span></div>`;
   }
-  if (!group.checkout_ref || group.checkout_ref.startsWith("line-")) {
+  if (!canInvoice) {
     return "—";
   }
-  return `<button type="button" class="btn btn-ghost btn-sm btn-danger-text" onclick="openVoidSaleModal(${JSON.stringify(group.checkout_ref)})">Void</button>`;
+  const voidBtn = `<button type="button" class="btn btn-ghost btn-sm btn-danger-text" onclick="openVoidSaleModal(${JSON.stringify(group.checkout_ref)})">Void</button>`;
+  return `<div class="history-actions">${invoiceBtn}${voidBtn}</div>`;
 }
 
 function renderHistory(transactions) {
@@ -2469,10 +2823,13 @@ function renderHistory(transactions) {
 
   if (!transactions.length) {
     tbody.innerHTML = `<tr><td colspan="${colCount}">${emptyState(UI_ICONS.clock, "No transactions", hideSellerCol ? "Your sales will appear here." : "Sales, restocks, and adjustments will appear here.")}</td></tr>`;
+    state.historySaleGroups = new Map();
     return;
   }
 
   const { groupedSales, other } = groupHistorySales(transactions);
+  state.historySaleGroups = new Map(groupedSales.map((g) => [g.checkout_ref, g]));
+
   const saleRows = groupedSales
     .map(
       (group) => `
@@ -3513,6 +3870,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-back-to-sell")?.addEventListener("click", () => setShiftUiPhase("sell"));
 
   document.getElementById("void-sale-form")?.addEventListener("submit", submitVoidSale);
+  document.getElementById("btn-print-invoice")?.addEventListener("click", printInvoice);
 
   document.getElementById("restock-form").addEventListener("submit", submitRestock);
   document.getElementById("adjust-form").addEventListener("submit", submitAdjust);
