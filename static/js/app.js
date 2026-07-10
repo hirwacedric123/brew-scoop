@@ -1900,21 +1900,6 @@ function renderCashNotesBreakdown(cashNotes) {
     .join("");
 }
 
-function updateShiftCloseSystemPayments() {
-  const panel = document.getElementById("shift-system-payments");
-  const live = state.sellerShift?.shift?.live_sales;
-  if (!panel) return;
-  if (!live || shiftUiPhase !== "close") {
-    panel.hidden = true;
-    return;
-  }
-  panel.hidden = false;
-  const momoEl = document.getElementById("shift-close-momo");
-  const visaEl = document.getElementById("shift-close-visa");
-  if (momoEl) momoEl.textContent = fmt.format(live.momo_sales || 0);
-  if (visaEl) visaEl.textContent = fmt.format(live.visa_sales || 0);
-}
-
 function setShiftUiPhase(phase) {
   shiftUiPhase = phase === "close" ? "close" : "sell";
   const data = state.sellerShift;
@@ -1948,10 +1933,9 @@ function renderShiftOpenPhase() {
   }
   if (subtitle) {
     subtitle.textContent = closing
-      ? "Count the cash in your till — recorded cash stays hidden until you submit."
+      ? "Count the cash in your till — recorded sales stay hidden until you submit."
       : "Sell during your shift, then count your cash notes to close.";
   }
-  updateShiftCloseSystemPayments();
   updateShiftSteps(closing ? "close" : "sell");
 }
 
@@ -2801,7 +2785,7 @@ function historySaleProductCell(group) {
 function historyVoidAction(group) {
   const canInvoice = group.checkout_ref && !group.checkout_ref.startsWith("line-");
   const invoiceBtn = canInvoice
-    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="showInvoiceFromHistory(${JSON.stringify(group.checkout_ref)})">Invoice</button>`
+    ? `<button type="button" class="btn btn-ghost btn-sm" onclick="showInvoiceFromHistory('${escAttr(group.checkout_ref)}')">Invoice</button>`
     : "";
 
   if (group.is_voided) {
@@ -2810,7 +2794,7 @@ function historyVoidAction(group) {
   if (!canInvoice) {
     return "—";
   }
-  const voidBtn = `<button type="button" class="btn btn-ghost btn-sm btn-danger-text" onclick="openVoidSaleModal(${JSON.stringify(group.checkout_ref)})">Void</button>`;
+  const voidBtn = `<button type="button" class="btn btn-ghost btn-sm btn-danger-text" onclick="openVoidSaleModal('${escAttr(group.checkout_ref)}')">Void</button>`;
   return `<div class="history-actions">${invoiceBtn}${voidBtn}</div>`;
 }
 

@@ -1737,12 +1737,6 @@ def seller_shift_status():
     open_shift = get_open_seller_shift(db, user["id"])
     if open_shift:
         shift_data = _row_to_shift(open_shift)
-        # Blind cash count: do not expose cash/total sales before the seller submits.
-        live = _seller_sales_for_shift(db, open_shift["id"])
-        shift_data["live_sales"] = {
-            "momo_sales": live["momo_sales"],
-            "visa_sales": live["visa_sales"],
-        }
         return jsonify({
             "has_open_shift": True,
             "shift": shift_data,
