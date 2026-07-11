@@ -143,47 +143,7 @@ function canAccessView(viewId) {
   const role = state.currentUser?.role;
   if (role === "admin" && viewId === "sell") return false;
   if (!isSeller()) return true;
-  if (viewId === "sell" || viewId === "reconcile") return true;
-  if (viewId === "history" || viewId === "sales") return !hasOpenShift();
-  return false;
-}
-
-function sellerReportsUnlocked() {
-  return isSeller() && !hasOpenShift();
-}
-
-function updateSellerNavUi() {
-  if (!isSeller()) return;
-  const unlocked = sellerReportsUnlocked();
-  document.querySelectorAll(".seller-reports-nav").forEach((el) => {
-    el.hidden = !unlocked;
-  });
-}
-
-function configureSellerReportsUi() {
-  if (!isSeller()) return;
-
-  const historyChips = document.getElementById("history-filter-chips");
-  const historySeller = document.getElementById("history-seller-filter");
-  const historyType = document.getElementById("history-type-filter");
-  const historySubtitle = document.querySelector("#view-history .topbar-heading p");
-  const salesSeller = document.getElementById("sales-seller-filter");
-  const salesSubtitle = document.getElementById("sales-report-subtitle");
-
-  if (historyChips) historyChips.hidden = true;
-  if (historySeller) historySeller.hidden = true;
-  if (historyType) historyType.value = "sale";
-  if (historySubtitle) {
-    historySubtitle.textContent = "Your shifts and sales transactions";
-  }
-  const historyShiftsPanel = document.getElementById("history-shifts-panel");
-  const historyTxHead = document.getElementById("history-transactions-head");
-  if (historyShiftsPanel) historyShiftsPanel.hidden = false;
-  if (historyTxHead) historyTxHead.hidden = false;
-  if (salesSeller) salesSeller.hidden = true;
-  if (salesSubtitle) salesSubtitle.textContent = "Track your revenue by day, week, or month";
-
-  document.body.classList.add("seller-reports-mode");
+  return viewId === "sell" || viewId === "reconcile";
 }
 
 const ROLE_LABELS = {
@@ -443,12 +403,7 @@ function closeMobileNav() {
 }
 
 function switchView(viewId) {
-  if (!canAccessView(viewId)) {
-    if (isSeller() && (viewId === "history" || viewId === "sales")) {
-      toast("Close your shift to view history and sales reports.", "error");
-    }
-    return;
-  }
+  if (!canAccessView(viewId)) return;
 
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
@@ -1209,7 +1164,6 @@ function updateSellShiftUi() {
   if (banner) banner.hidden = open;
   if (layout) layout.classList.toggle("sell-locked", !open);
   if (checkoutBtn) checkoutBtn.disabled = !open;
-  updateSellerNavUi();
 }
 
 function togglePosMode() {
@@ -2491,8 +2445,8 @@ function renderShiftSummary(shift, message) {
         <div class="shift-result-body">
           <div class="reconcile-grid">
             ${statCard("revenue", UI_ICONS.revenue, "Total sales", fmt.format(shift.total_sales), "All payment types")}
-            ${statCard("sales", UI_ICONS.sales, "Line items", fmtNum.format(shift.sale_count || 0), "Sales recorded")}
-            ${statCard("month", UI_ICONS.chart, "Units sold", fmtNum.format(shift.units_sold || 0), "This shift")}
+            ${isSeller() ? "" : statCard("sales", UI_ICONS.sales, "Line items", fmtNum.format(shift.sale_count || 0), "Sales recorded")}
+            ${isSeller() ? "" : statCard("month", UI_ICONS.chart, "Units sold", fmtNum.format(shift.units_sold || 0), "This shift")}
           </div>
           <h4>Payment reconciliation</h4>
           ${renderPaymentReconcileCards(shift)}
@@ -2503,20 +2457,10 @@ function renderShiftSummary(shift, message) {
             ${renderPaymentRow("MoMo", shift.momo_sales, payTotal, "momo")}
             ${renderPaymentRow("Visa", shift.visa_sales, payTotal, "visa")}
           </div>
-          ${renderShiftSalesHistory(shift.sales)}
+          ${isSeller() ? "" : renderShiftSalesHistory(shift.sales)}
         </div>
       </div>
       <p class="reconcile-closed-note">Shift closed — start a new one when you are ready to sell again.</p>
-      <div class="shift-result-actions">
-        <button type="button" class="btn btn-ghost shift-result-link" data-view="history">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          View history
-        </button>
-        <button type="button" class="btn btn-ghost shift-result-link" data-view="sales">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
-          Sales report
-        </button>
-      </div>
     </div>
   `;
 
@@ -2578,7 +2522,6 @@ function renderShiftView() {
     setShiftPanelsMode("is-idle");
     updateShiftSteps("start");
   }
-  updateSellerNavUi();
 }
 
 async function loadReconcileView() {
@@ -2627,6 +2570,9 @@ async function submitCloseShift(e) {
   const countedMomo = readCountedPaymentAmount("counted-momo");
   const countedVisa = readCountedPaymentAmount("counted-visa");
   const concerns = document.getElementById("shift-concerns")?.value.trim() || "";
+  const reportLowStock = document.getElementById("shift-report-low-stock")?.value.trim() || "";
+  const reportIssues = document.getElementById("shift-report-issues")?.value.trim() || "";
+  const reportWishes = document.getElementById("shift-report-wishes")?.value.trim() || "";
 
   btn.disabled = true;
   try {
@@ -2637,10 +2583,20 @@ async function submitCloseShift(e) {
         counted_momo: countedMomo,
         counted_visa: countedVisa,
         concerns,
+        report_low_stock: reportLowStock,
+        report_issues: reportIssues,
+        report_wishes: reportWishes,
       }),
     });
-    const concernsInput = document.getElementById("shift-concerns");
-    if (concernsInput) concernsInput.value = "";
+    [
+      "shift-concerns",
+      "shift-report-low-stock",
+      "shift-report-issues",
+      "shift-report-wishes",
+    ].forEach((id) => {
+      const input = document.getElementById(id);
+      if (input) input.value = "";
+    });
     state.sellerShift = {
       has_open_shift: false,
       shift: data.shift,
@@ -2996,6 +2952,36 @@ function renderHistoryShifts(report) {
   }
 }
 
+function shiftHasReport(shift) {
+  return Boolean(
+    shift.concerns ||
+      shift.report_low_stock ||
+      shift.report_issues ||
+      shift.report_wishes
+  );
+}
+
+function renderShiftReport(shift) {
+  if (!shiftHasReport(shift)) return "";
+  const items = [
+    ["Low stock / to restock", shift.report_low_stock],
+    ["Issues met", shift.report_issues],
+    ["Wishes / suggestions", shift.report_wishes],
+    ["Other notes", shift.concerns],
+  ]
+    .filter(([, value]) => value)
+    .map(
+      ([label, value]) =>
+        `<div class="shift-report-item"><span class="shift-report-item-label">${label}</span><p>${esc(value)}</p></div>`
+    )
+    .join("");
+  return `
+    <div class="shift-detail-concerns">
+      <h4>Seller's end-of-shift report</h4>
+      ${items}
+    </div>`;
+}
+
 function buildShiftListItemHtml(shift, selectedId, maxSales, selectFn) {
   const statusBadge =
     shift.status === "open"
@@ -3006,8 +2992,8 @@ function buildShiftListItemHtml(shift, selectedId, maxSales, selectFn) {
       ? `Started ${formatTime(shift.opened_at)} · ${formatShiftDuration(shift.opened_at, true)}`
       : `${formatTime(shift.opened_at)} → ${formatTime(shift.closed_at)}`;
   const sellerLine = isSeller() ? "" : `${esc(shift.seller_name)} `;
-  const concernBadge = shift.concerns
-    ? '<span class="shift-concern-badge" title="Seller flagged concerns">!</span>'
+  const concernBadge = shiftHasReport(shift)
+    ? '<span class="shift-concern-badge" title="Seller left an end-of-shift report">!</span>'
     : "";
   return `
     <button type="button" class="sales-date-item shift-list-item ${selectedId === shift.id ? "active" : ""}"
@@ -3812,13 +3798,7 @@ function renderShiftDetail(shift, targets = {}) {
     `;
   }
 
-  const concernsSection = shift.concerns
-    ? `
-      <div class="shift-detail-concerns">
-        <h4>Seller concerns</h4>
-        <p>${esc(shift.concerns)}</p>
-      </div>`
-    : "";
+  const concernsSection = renderShiftReport(shift);
 
   body.innerHTML = `
     ${reconcileSection}
@@ -4305,11 +4285,9 @@ document.addEventListener("DOMContentLoaded", () => {
   applyRestoredPosMode();
 
   if (isSeller()) {
-    configureSellerReportsUi();
     loadCategories().then(() => {
       refreshSellerShift().then(() => {
         loadSellView().then(() => {
-          updateSellerNavUi();
           applyRestoredPaymentMethod();
           // Navigate away from default sell view if user was on a different page
           if (savedActiveView && savedActiveView !== "sell" && canAccessView(savedActiveView)) {
