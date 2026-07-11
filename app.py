@@ -2495,6 +2495,21 @@ def dashboard_stats():
     week_from, week_to = week_range_kigali()
     month_from, month_to = month_range_kigali()
 
+    today_date_obj = now_kigali().date()
+    yesterday_str = (today_date_obj - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    this_week_start = today_date_obj - timedelta(days=today_date_obj.weekday())
+    prev_week_start = this_week_start - timedelta(weeks=1)
+    prev_week_end = this_week_start - timedelta(days=1)
+    prev_week_from = prev_week_start.strftime("%Y-%m-%d")
+    prev_week_to = prev_week_end.strftime("%Y-%m-%d")
+
+    this_month_start = today_date_obj.replace(day=1)
+    prev_month_end = this_month_start - timedelta(days=1)
+    prev_month_start = prev_month_end.replace(day=1)
+    prev_month_from = prev_month_start.strftime("%Y-%m-%d")
+    prev_month_to = prev_month_end.strftime("%Y-%m-%d")
+
     sales_today = db.execute(
         f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
                   COALESCE(SUM(quantity), 0) AS units
@@ -2521,6 +2536,57 @@ def dashboard_stats():
              AND substr(created_at, 1, 10) <= ?""",
         (month_from, month_to),
     ).fetchone()
+
+    sales_yesterday = db.execute(
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+                  COALESCE(SUM(quantity), 0) AS units
+           FROM transactions WHERE type='sale'{_not_voided_clause()} AND substr(created_at, 1, 10) = ?""",
+        (yesterday_str,),
+    ).fetchone()
+
+    sales_prev_week = db.execute(
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+                  COALESCE(SUM(quantity), 0) AS units
+           FROM transactions
+           WHERE type='sale'{_not_voided_clause()}
+             AND substr(created_at, 1, 10) >= ?
+             AND substr(created_at, 1, 10) <= ?""",
+        (prev_week_from, prev_week_to),
+    ).fetchone()
+
+    sales_prev_month = db.execute(
+        f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
+                  COALESCE(SUM(quantity), 0) AS units
+           FROM transactions
+           WHERE type='sale'{_not_voided_clause()}
+             AND substr(created_at, 1, 10) >= ?
+             AND substr(created_at, 1, 10) <= ?""",
+        (prev_month_from, prev_month_to),
+    ).fetchone()
+
+    seven_days_ago = (today_date_obj - timedelta(days=6)).strftime("%Y-%m-%d")
+    daily_rows = db.execute(
+        f"""SELECT substr(created_at, 1, 10) AS day,
+                  COALESCE(SUM(total_amount), 0) AS revenue,
+                  COALESCE(SUM(quantity), 0) AS units
+           FROM transactions
+           WHERE type='sale'{_not_voided_clause()}
+             AND substr(created_at, 1, 10) >= ?
+             AND substr(created_at, 1, 10) <= ?
+           GROUP BY day
+           ORDER BY day ASC""",
+        (seven_days_ago, today),
+    ).fetchall()
+
+    daily_map = {
+        r["day"]: {"revenue": round(r["revenue"], 2), "units": r["units"]}
+        for r in daily_rows
+    }
+    daily_revenue_7d = []
+    for i in range(6, -1, -1):
+        date_str = (today_date_obj - timedelta(days=i)).strftime("%Y-%m-%d")
+        entry = daily_map.get(date_str, {"revenue": 0.0, "units": 0})
+        daily_revenue_7d.append({"date": date_str, **entry})
 
     sales_all = db.execute(
         f"""SELECT COALESCE(SUM(total_amount), 0) AS revenue,
@@ -2582,10 +2648,17 @@ def dashboard_stats():
         "cup_inventory": cup_stock,
         "revenue_today": round(sales_today["revenue"], 2),
         "units_sold_today": sales_today["units"],
+        "revenue_yesterday": round(sales_yesterday["revenue"], 2),
+        "units_sold_yesterday": sales_yesterday["units"],
         "revenue_week": round(sales_week["revenue"], 2),
         "units_sold_week": sales_week["units"],
+        "revenue_prev_week": round(sales_prev_week["revenue"], 2),
+        "units_sold_prev_week": sales_prev_week["units"],
         "revenue_month": round(sales_month["revenue"], 2),
         "units_sold_month": sales_month["units"],
+        "revenue_prev_month": round(sales_prev_month["revenue"], 2),
+        "units_sold_prev_month": sales_prev_month["units"],
+        "daily_revenue_7d": daily_revenue_7d,
         "today_date": today,
         "total_revenue": round(sales_all["revenue"], 2),
         "total_sales_count": sales_all["count"],
