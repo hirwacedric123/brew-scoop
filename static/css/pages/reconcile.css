@@ -818,10 +818,13 @@
   margin: 0;
 }
 
-.shift-panel-result > .btn {
-  margin-top: 0.35rem;
-  padding-top: 1.35rem;
-  border-top: 1px solid var(--border-subtle);
+.shift-panel-result > #btn-new-shift {
+  margin-top: 0;
+  margin-bottom: 0.35rem;
+  padding-top: 0;
+  padding-bottom: 1.35rem;
+  border-top: none;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .reconcile-summary {
@@ -1604,8 +1607,9 @@
   }
 }
 
-/* Shift concerns (seller → admin) */
-.shift-concerns-form {
+/* Shift report (seller → admin) */
+.shift-concerns-form,
+.shift-report-form {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -1619,7 +1623,26 @@
   color: var(--text-muted);
 }
 
-.shift-concerns-input {
+.shift-report-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.shift-report-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.shift-report-field > label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--espresso, #4a3728);
+}
+
+.shift-concerns-input,
+.shift-report-input {
   width: 100%;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border-subtle);
@@ -1631,7 +1654,8 @@
   background: white;
 }
 
-.shift-concerns-input:focus {
+.shift-concerns-input:focus,
+.shift-report-input:focus {
   outline: none;
   border-color: var(--amber, #d4a03c);
   box-shadow: 0 0 0 3px rgba(212, 160, 60, 0.16);
@@ -1657,6 +1681,22 @@
   margin: 0;
   white-space: pre-wrap;
   color: var(--espresso, #4a3728);
+}
+
+.shift-report-item + .shift-report-item {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px dashed rgba(212, 160, 60, 0.3);
+}
+
+.shift-report-item-label {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--amber, #b9832a);
 }
 
 .shift-concern-badge {
