@@ -2626,6 +2626,7 @@ async function submitCloseShift(e) {
   const cashNotes = readCashNotesFromForm();
   const countedMomo = readCountedPaymentAmount("counted-momo");
   const countedVisa = readCountedPaymentAmount("counted-visa");
+  const concerns = document.getElementById("shift-concerns")?.value.trim() || "";
 
   btn.disabled = true;
   try {
@@ -2635,8 +2636,11 @@ async function submitCloseShift(e) {
         cash_notes: cashNotes,
         counted_momo: countedMomo,
         counted_visa: countedVisa,
+        concerns,
       }),
     });
+    const concernsInput = document.getElementById("shift-concerns");
+    if (concernsInput) concernsInput.value = "";
     state.sellerShift = {
       has_open_shift: false,
       shift: data.shift,
@@ -3002,11 +3006,14 @@ function buildShiftListItemHtml(shift, selectedId, maxSales, selectFn) {
       ? `Started ${formatTime(shift.opened_at)} · ${formatShiftDuration(shift.opened_at, true)}`
       : `${formatTime(shift.opened_at)} → ${formatTime(shift.closed_at)}`;
   const sellerLine = isSeller() ? "" : `${esc(shift.seller_name)} `;
+  const concernBadge = shift.concerns
+    ? '<span class="shift-concern-badge" title="Seller flagged concerns">!</span>'
+    : "";
   return `
     <button type="button" class="sales-date-item shift-list-item ${selectedId === shift.id ? "active" : ""}"
       onclick="${selectFn}(${shift.id})">
       <div class="sales-date-info">
-        <strong>${sellerLine}${statusBadge}</strong>
+        <strong>${sellerLine}${statusBadge}${concernBadge}</strong>
         <span>${timeLine}</span>
         <span>${fmtNum.format(shift.sale_count)} sale${shift.sale_count !== 1 ? "s" : ""} · ${fmtNum.format(shift.units_sold)} units</span>
       </div>
@@ -3805,8 +3812,17 @@ function renderShiftDetail(shift, targets = {}) {
     `;
   }
 
+  const concernsSection = shift.concerns
+    ? `
+      <div class="shift-detail-concerns">
+        <h4>Seller concerns</h4>
+        <p>${esc(shift.concerns)}</p>
+      </div>`
+    : "";
+
   body.innerHTML = `
     ${reconcileSection}
+    ${concernsSection}
     <div class="reconcile-payments shift-detail-payments">
       <h4>Payment breakdown</h4>
       ${renderPaymentRow("Cash", shift.cash_sales, payTotal, "cash")}
