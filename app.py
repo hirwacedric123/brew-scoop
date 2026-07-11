@@ -283,6 +283,11 @@ def _migrate_db(db):
     ):
         if col not in shift_cols:
             db.execute(f"ALTER TABLE seller_shifts ADD COLUMN {col} REAL")
+    if "concerns" not in shift_cols:
+        db.execute("ALTER TABLE seller_shifts ADD COLUMN concerns TEXT")
+    for col in ("report_low_stock", "report_issues", "report_wishes"):
+        if col not in shift_cols:
+            db.execute(f"ALTER TABLE seller_shifts ADD COLUMN {col} TEXT")
 
     tx_cols = {row[1] for row in db.execute("PRAGMA table_info(transactions)").fetchall()}
     if "voided_at" not in tx_cols:
