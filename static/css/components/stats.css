@@ -89,3 +89,79 @@
   font-size: 0.76rem;
   color: var(--text-subtle);
 }
+
+/* ── Comparison delta badge ──────────────────────────────────────────────── */
+
+.stat-comparison {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.stat-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.stat-delta-up {
+  background: #e8f5eb;
+  color: var(--success);
+}
+
+.stat-delta-down {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.stat-delta-flat {
+  background: var(--foam);
+  color: var(--text-muted);
+}
+
+.stat-compare-label {
+  font-size: 0.7rem;
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+
+/* Featured (dark) card overrides */
+.stat-card-featured .stat-delta-up {
+  background: rgba(107, 143, 113, 0.25);
+  color: #b2dcb8;
+}
+
+.stat-card-featured .stat-delta-down {
+  background: rgba(196, 92, 74, 0.25);
+  color: #f5aba0;
+}
+
+.stat-card-featured .stat-delta-flat {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(245, 230, 211, 0.55);
+}
+
+.stat-card-featured .stat-compare-label {
+  color: rgba(245, 230, 211, 0.5);
+}
+
+/* Skeleton icon placeholder */
+.skeleton-stat-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.stat-card:not(.stat-card-featured) .skeleton-stat-icon {
+  width: 32px;
+  height: 32px;
+}
