@@ -4,6 +4,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 from datetime import datetime, timedelta, timezone
 
 from env_loader import load_env_file
@@ -41,10 +42,15 @@ from password_reset import (
 )
 from reporting import (
     category_breakdown as _category_breakdown,
+    extra_report_emails,
     get_database_path,
     payment_breakdown as _payment_breakdown,
+    render_shift_close_html,
+    render_shift_close_text,
+    report_recipients,
     sales_summary as _sales_summary,
 )
+from mailer import send_email
 
 app = Flask(__name__)
 app.config["DATABASE"] = get_database_path()
@@ -1717,12 +1723,23 @@ def _payment_reconcile_message(label, counted, expected, variance):
     )
 
 
+def _shift_report_fields(row):
+    keys = row.keys()
+    return {
+        "concerns": row["concerns"] if "concerns" in keys else None,
+        "report_low_stock": row["report_low_stock"] if "report_low_stock" in keys else None,
+        "report_issues": row["report_issues"] if "report_issues" in keys else None,
+        "report_wishes": row["report_wishes"] if "report_wishes" in keys else None,
+    }
+
+
 def _row_to_shift(row, include_close=False):
     data = {
         "id": row["id"],
         "status": row["status"],
         "opened_at": row["opened_at"],
     }
+    data.update(_shift_report_fields(row))
     if include_close or row["status"] == "closed":
         cash_variance = round(row["variance"] or 0, 2)
         momo_variance = round(row["momo_variance"] or 0, 2)
@@ -1857,6 +1874,37 @@ def seller_shift_start():
     }), 201
 
 
+def _collect_shift_admin_recipients(db):
+    admins, _sellers = report_recipients(db)
+    emails = [admin["email"] for admin in admins]
+    emails.extend(extra_report_emails())
+    seen = set()
+    unique = []
+    for email in emails:
+        key = email.lower()
+        if email and key not in seen:
+            seen.add(key)
+            unique.append(email)
+    return unique
+
+
+def _dispatch_shift_close_email(recipients, shift_data, seller_name):
+    if not recipients:
+        return
+
+    def _worker():
+        try:
+            status = (shift_data.get("status_label") or "balanced").title()
+            subject = f"Shift closed — {seller_name} ({status})"
+            html = render_shift_close_html(shift_data, seller_name)
+            text = render_shift_close_text(shift_data, seller_name)
+            send_email(recipients, subject, html, text)
+        except Exception as exc:  # noqa: BLE001 — email must never break shift close
+            app.logger.warning("Shift close email failed: %s", exc)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 @app.route("/api/seller/shift/close", methods=["POST"])
 @role_required("seller")
 def seller_shift_close():
@@ -1918,7 +1966,10 @@ def seller_shift_close():
            cash_notes_1000 = ?,
            cash_notes_500 = ?,
            cash_notes_100 = ?,
-           concerns = ?
+           concerns = ?,
+           report_low_stock = ?,
+           report_issues = ?,
+           report_wishes = ?
            WHERE id = ?""",
         (
             ts,
@@ -1943,6 +1994,9 @@ def seller_shift_close():
             cash_notes[500],
             cash_notes[100],
             concerns,
+            report_low_stock,
+            report_issues,
+            report_wishes,
             shift["id"],
         ),
     )
@@ -1953,6 +2007,11 @@ def seller_shift_close():
     ).fetchone()
     closed = _shift_with_sales(db, row, include_close=True)
     message = _shift_close_message(row)
+
+    seller_name = user["display_name"] if "display_name" in user.keys() else "Seller"
+    recipients = _collect_shift_admin_recipients(db)
+    _dispatch_shift_close_email(recipients, closed, seller_name)
+
     return jsonify({
         "has_open_shift": False,
         "shift": closed,
@@ -2134,10 +2193,6 @@ def list_transactions():
     user_id = request.args.get("user_id", "").strip()
     category = request.args.get("category", "").strip()
 
-    if user["role"] == "seller":
-        tx_type = "sale"
-        user_id = str(user["id"])
-
     query = """
         SELECT t.*, p.name AS product_name, p.category,
                u.display_name AS seller_name
@@ -2214,18 +2269,14 @@ def sales_dates():
 
 
 @app.route("/api/sales/report", methods=["GET"])
-@role_required("admin", "stock_manager", "seller")
+@role_required("admin", "stock_manager")
 def sales_report():
     db = get_db()
-    user = get_current_user(db)
-    blocked = _seller_must_close_shift(db, user)
-    if blocked:
-        return jsonify({"error": blocked}), 403
 
     preset = request.args.get("preset", "").strip()
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
-    user_id = _scoped_user_id(user, request.args.get("user_id", "").strip())
+    user_id = request.args.get("user_id", "").strip()
 
     if preset == "today":
         date_from = date_to = today_kigali()
@@ -2282,6 +2333,7 @@ def _shift_report_row(db, row):
         "opened_at": row["opened_at"],
         "closed_at": row["closed_at"],
     }
+    data.update(_shift_report_fields(row))
     if row["status"] == "closed":
         cash_variance = round(row["variance"] or 0, 2)
         momo_variance = round(row["momo_variance"] or 0, 2)
@@ -2430,13 +2482,9 @@ def shifts_report():
 
 
 @app.route("/api/shifts/<int:shift_id>", methods=["GET"])
-@role_required("admin", "stock_manager", "seller")
+@role_required("admin", "stock_manager")
 def shift_detail(shift_id):
     db = get_db()
-    user = get_current_user(db)
-    blocked = _seller_must_close_shift(db, user)
-    if blocked:
-        return jsonify({"error": blocked}), 403
 
     row = db.execute(
         """SELECT s.*, u.display_name AS seller_name
@@ -2447,9 +2495,6 @@ def shift_detail(shift_id):
     ).fetchone()
     if not row:
         return jsonify({"error": "Shift not found"}), 404
-
-    if user["role"] == "seller" and row["user_id"] != user["id"]:
-        return jsonify({"error": "Access denied"}), 403
 
     data = _shift_report_row(db, row)
     data["sales"] = _shift_sales_for_response(db, shift_id)
