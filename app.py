@@ -568,20 +568,6 @@ def _sale_user_clause(user_id, alias=""):
     return f" AND {prefix}user_id = ?", [uid]
 
 
-def _seller_must_close_shift(db, user):
-    if user["role"] != "seller":
-        return None
-    if get_open_seller_shift(db, user["id"]):
-        return "Close your shift before viewing reports"
-    return None
-
-
-def _scoped_user_id(user, requested_user_id):
-    if user["role"] == "seller":
-        return str(user["id"])
-    return requested_user_id
-
-
 def _daily_sales_breakdown(db, date_from, date_to, user_id=None):
     user_clause, user_params = _sale_user_clause(user_id)
     rows = db.execute(
@@ -1881,6 +1867,11 @@ def seller_shift_close():
     if error:
         return jsonify({"error": error}), 400
 
+    concerns = (data.get("concerns") or "").strip()[:2000] or None
+    report_low_stock = (data.get("report_low_stock") or "").strip()[:2000] or None
+    report_issues = (data.get("report_issues") or "").strip()[:2000] or None
+    report_wishes = (data.get("report_wishes") or "").strip()[:2000] or None
+
     counted_cash = _cash_total_from_notes(cash_notes)
 
     db = get_db()
@@ -1921,7 +1912,8 @@ def seller_shift_close():
            cash_notes_2000 = ?,
            cash_notes_1000 = ?,
            cash_notes_500 = ?,
-           cash_notes_100 = ?
+           cash_notes_100 = ?,
+           concerns = ?
            WHERE id = ?""",
         (
             ts,
@@ -1945,6 +1937,7 @@ def seller_shift_close():
             cash_notes[1000],
             cash_notes[500],
             cash_notes[100],
+            concerns,
             shift["id"],
         ),
     )
@@ -2125,13 +2118,9 @@ def adjust_cups():
 # ── Transactions & Dashboard API ─────────────────────────────────────────────
 
 @app.route("/api/transactions", methods=["GET"])
-@role_required("admin", "stock_manager", "seller")
+@role_required("admin", "stock_manager")
 def list_transactions():
     db = get_db()
-    user = get_current_user(db)
-    blocked = _seller_must_close_shift(db, user)
-    if blocked:
-        return jsonify({"error": blocked}), 403
 
     limit = min(int(request.args.get("limit", 50)), 500)
     tx_type = request.args.get("type", "").strip()
@@ -2392,19 +2381,15 @@ def _shifts_date_range_params():
 
 
 @app.route("/api/shifts/report", methods=["GET"])
-@role_required("admin", "stock_manager", "seller")
+@role_required("admin", "stock_manager")
 def shifts_report():
     db = get_db()
-    user = get_current_user(db)
-    blocked = _seller_must_close_shift(db, user)
-    if blocked:
-        return jsonify({"error": blocked}), 403
 
     date_from, date_to, preset, error = _shifts_date_range_params()
     if error:
         return jsonify({"error": error[0]}), error[1]
 
-    user_id = _scoped_user_id(user, request.args.get("user_id", "").strip())
+    user_id = request.args.get("user_id", "").strip()
     user_clause = ""
     user_params = []
     uid = _parse_user_id_filter(user_id)
