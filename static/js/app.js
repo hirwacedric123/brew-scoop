@@ -38,6 +38,9 @@ const state = {
   charts: {},
 };
 
+// Pending cart-removal action awaiting admin-password confirmation.
+let pendingCartRemoval = null;
+
 const VIEW_TITLES = {
   dashboard: "Dashboard",
   products: "Products",
@@ -1547,11 +1550,29 @@ function addToCart(productId, qty = null) {
 }
 
 function updateCartItemQty(productId, quantity) {
+  const item = state.cart.find((c) => c.product_id === productId);
+  const currentQty = item ? item.quantity : 0;
+
   if (quantity < 1) {
-    removeFromCart(productId);
+    requireCartRemovalAuth(
+      () => applyRemoveFromCart(productId),
+      "Removing items from the cart requires an admin password."
+    );
     return;
   }
 
+  if (item && quantity < currentQty) {
+    requireCartRemovalAuth(
+      () => applyUpdateCartItemQty(productId, quantity),
+      "Reducing item quantities requires an admin password."
+    );
+    return;
+  }
+
+  applyUpdateCartItemQty(productId, quantity);
+}
+
+function applyUpdateCartItemQty(productId, quantity) {
   const item = state.cart.find((c) => c.product_id === productId);
   const product = state.products.find((p) => p.id === productId);
   if (!item || !product) return;
@@ -1565,6 +1586,13 @@ function updateCartItemQty(productId, quantity) {
 }
 
 function removeFromCart(productId) {
+  requireCartRemovalAuth(
+    () => applyRemoveFromCart(productId),
+    "Removing items from the cart requires an admin password."
+  );
+}
+
+function applyRemoveFromCart(productId) {
   state.cart = state.cart.filter((c) => c.product_id !== productId);
   renderCart();
   renderSellBrowse();
@@ -1573,6 +1601,17 @@ function removeFromCart(productId) {
 }
 
 function clearCart() {
+  if (!state.cart.length) {
+    applyClearCart();
+    return;
+  }
+  requireCartRemovalAuth(
+    () => applyClearCart(),
+    "Clearing the cart requires an admin password."
+  );
+}
+
+function applyClearCart() {
   state.cart = [];
   clearPaymentMethod();
   document.getElementById("sell-notes").value = "";
@@ -1582,6 +1621,51 @@ function clearCart() {
   renderCart();
   renderSellBrowse();
   saveUIState();
+}
+
+// Sellers must confirm an admin password before removing/reducing cart items.
+function requireCartRemovalAuth(action, message) {
+  if (typeof action !== "function") return;
+  pendingCartRemoval = action;
+  openCartRemoveModal(message);
+}
+
+function openCartRemoveModal(message) {
+  const label = document.getElementById("cart-remove-label");
+  if (label && message) label.textContent = message;
+  const pwd = document.getElementById("cart-remove-password");
+  if (pwd) pwd.value = "";
+  showModal("cart-remove-modal");
+  pwd?.focus();
+}
+
+function cancelCartRemoval() {
+  pendingCartRemoval = null;
+  // Re-render so any optimistic quantity-input change is reverted to state.
+  renderCart();
+}
+
+async function submitCartRemove(e) {
+  e.preventDefault();
+  const action = pendingCartRemoval;
+  const password = document.getElementById("cart-remove-password")?.value || "";
+
+  if (!action) {
+    hideModal("cart-remove-modal");
+    return;
+  }
+
+  try {
+    await api("/api/auth/verify-admin", {
+      method: "POST",
+      body: JSON.stringify({ admin_password: password }),
+    });
+    hideModal("cart-remove-modal");
+    pendingCartRemoval = null;
+    action();
+  } catch (err) {
+    toast(err.message, "error");
+  }
 }
 
 function getCartTotal() {
@@ -1687,7 +1771,7 @@ async function completeCheckout() {
       "success"
     );
 
-    clearCart();
+    applyClearCart();
     await loadSellView();
     if (!isSeller()) loadDashboard();
 
@@ -4384,6 +4468,13 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-back-to-sell")?.addEventListener("click", () => setShiftUiPhase("sell"));
 
   document.getElementById("void-sale-form")?.addEventListener("submit", submitVoidSale);
+  document.getElementById("cart-remove-form")?.addEventListener("submit", submitCartRemove);
+  const cartRemoveModal = document.getElementById("cart-remove-modal");
+  cartRemoveModal?.addEventListener("click", (e) => {
+    if (e.target === cartRemoveModal || e.target.closest("[data-close-modal]")) {
+      cancelCartRemoval();
+    }
+  });
   document.getElementById("btn-print-invoice")?.addEventListener("click", printInvoice);
 
   document.getElementById("restock-form").addEventListener("submit", submitRestock);

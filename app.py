@@ -743,6 +743,22 @@ def auth_login():
     )
 
 
+@app.route("/api/auth/verify-admin", methods=["POST"])
+@login_required
+def auth_verify_admin():
+    data = request.get_json(silent=True) or {}
+    admin_password = data.get("admin_password") or ""
+
+    if not admin_password:
+        return jsonify({"error": "Admin password is required"}), 400
+
+    db = get_db()
+    if not verify_admin_password(db, admin_password):
+        return jsonify({"error": "Invalid admin password"}), 403
+
+    return jsonify({"ok": True})
+
+
 @app.route("/api/auth/change-password", methods=["POST"])
 @login_required
 def auth_change_password():
