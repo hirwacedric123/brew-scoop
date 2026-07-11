@@ -35,6 +35,7 @@ const state = {
   historySaleGroups: null,
   currentUser: window.CURRENT_USER || null,
   sellerShift: null,
+  charts: {},
 };
 
 const VIEW_TITLES = {
@@ -139,6 +140,8 @@ function canViewShiftReports() {
 }
 
 function canAccessView(viewId) {
+  const role = state.currentUser?.role;
+  if (role === "admin" && viewId === "sell") return false;
   if (!isSeller()) return true;
   if (viewId === "sell" || viewId === "reconcile") return true;
   if (viewId === "history" || viewId === "sales") return !hasOpenShift();
@@ -271,6 +274,45 @@ function statCard(cls, icon, label, value, sub, extraStyle = "", featured = fals
       <div class="stat-label">${label}</div>
       <div class="stat-value">${value}</div>
       <div class="stat-sub">${sub}</div>
+    </div>
+  </div>`;
+}
+
+function statCardComparison(cls, icon, label, value, sub, currentNum, priorNum, priorLabel, featured = false) {
+  const featuredCls = featured ? " stat-card-featured" : "";
+
+  let deltaHtml = "";
+  if (priorLabel != null) {
+    if (priorNum > 0) {
+      const pct = ((currentNum - priorNum) / priorNum) * 100;
+      const dir = Math.abs(pct) < 0.5 ? "flat" : pct > 0 ? "up" : "down";
+      const arrow = dir === "up" ? "↑" : dir === "down" ? "↓" : "—";
+      const sign = pct > 0 ? "+" : pct < 0 ? "" : "";
+      const pctStr = dir === "flat" ? "no change" : `${sign}${Math.abs(pct) >= 10 ? pct.toFixed(0) : pct.toFixed(1)}%`;
+      deltaHtml = `<div class="stat-comparison">
+        <span class="stat-delta stat-delta-${dir}">${arrow} ${pctStr}</span>
+        <span class="stat-compare-label">vs ${esc(priorLabel)}</span>
+      </div>`;
+    } else if (currentNum > 0) {
+      deltaHtml = `<div class="stat-comparison">
+        <span class="stat-delta stat-delta-up">↑ new</span>
+        <span class="stat-compare-label">vs ${esc(priorLabel)}</span>
+      </div>`;
+    } else {
+      deltaHtml = `<div class="stat-comparison">
+        <span class="stat-delta stat-delta-flat">— no data</span>
+        <span class="stat-compare-label">vs ${esc(priorLabel)}</span>
+      </div>`;
+    }
+  }
+
+  return `<div class="stat-card stat-card-v2 ${cls}${featuredCls}">
+    <div class="stat-icon">${icon}</div>
+    <div class="stat-content">
+      <div class="stat-label">${label}</div>
+      <div class="stat-value">${value}</div>
+      ${sub ? `<div class="stat-sub">${sub}</div>` : ""}
+      ${deltaHtml}
     </div>
   </div>`;
 }
@@ -436,6 +478,7 @@ function switchView(viewId) {
   }
   if (viewId === "sales") {
     if (!isSeller()) loadSellers();
+    syncSalesUiFromState();
     loadSalesViewData();
   }
   if (viewId === "admin") loadAdminView();
@@ -481,18 +524,27 @@ function showTableSkeleton(tbodyId, colCount, rowCount = 5) {
 
 function showDashboardSkeleton() {
   document.getElementById("dashboard-stats").innerHTML = `
-    <div class="stat-card stat-card-featured skeleton-stat">
-      <div class="skeleton skeleton-text sm"></div>
-      <div class="skeleton skeleton-text lg"></div>
-      <div class="skeleton skeleton-text sm"></div>
+    <div class="stat-card stat-card-v2 stat-card-featured skeleton-stat">
+      <div class="skeleton-stat-icon skeleton"></div>
+      <div class="stat-content" style="flex:1">
+        <div class="skeleton skeleton-text sm" style="width:60%"></div>
+        <div class="skeleton skeleton-text lg" style="width:55%"></div>
+        <div class="skeleton skeleton-text sm" style="width:45%"></div>
+        <div class="skeleton skeleton-text sm" style="width:38%;margin-top:0.5rem"></div>
+      </div>
     </div>
     ${Array(4)
       .fill(0)
       .map(
         () => `
-    <div class="stat-card skeleton-stat">
-      <div class="skeleton skeleton-text sm"></div>
-      <div class="skeleton skeleton-text lg"></div>
+    <div class="stat-card stat-card-v2 skeleton-stat">
+      <div class="skeleton-stat-icon skeleton"></div>
+      <div class="stat-content" style="flex:1">
+        <div class="skeleton skeleton-text sm" style="width:55%"></div>
+        <div class="skeleton skeleton-text lg" style="width:60%"></div>
+        <div class="skeleton skeleton-text sm" style="width:40%"></div>
+        <div class="skeleton skeleton-text sm" style="width:48%;margin-top:0.35rem"></div>
+      </div>
     </div>`
       )
       .join("")}`;
@@ -599,17 +651,206 @@ function renderCategoryBars(categories, valueKey, emptyTitle, emptyMessage) {
     .join("")}</div>`;
 }
 
+function destroyChart(key) {
+  if (state.charts[key]) {
+    state.charts[key].destroy();
+    state.charts[key] = null;
+  }
+}
+
+function renderRevenueChart(dailyData, todayDate) {
+  const canvas = document.getElementById("chart-revenue-7d");
+  if (!canvas || typeof Chart === "undefined" || !dailyData?.length) return;
+  destroyChart("revenue7d");
+
+  const labels = dailyData.map((d) => {
+    if (d.date === todayDate) return "Today";
+    const dt = new Date(d.date + "T00:00:00");
+    return dt.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" });
+  });
+
+  const revenues = dailyData.map((d) => d.revenue);
+  const units = dailyData.map((d) => d.units);
+  const isToday = dailyData.map((d) => d.date === todayDate);
+
+  const bgColors = isToday.map((t) => (t ? "#c4a574" : "rgba(196,165,116,0.32)"));
+  const borderColors = isToday.map((t) => (t ? "#b08040" : "rgba(196,165,116,0.55)"));
+
+  state.charts.revenue7d = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Revenue",
+          data: revenues,
+          backgroundColor: bgColors,
+          borderColor: borderColors,
+          borderWidth: 1.5,
+          borderRadius: 7,
+          borderSkipped: false,
+          order: 2,
+        },
+        {
+          label: "Units",
+          data: units,
+          type: "line",
+          borderColor: "rgba(107,143,113,0.7)",
+          backgroundColor: "rgba(107,143,113,0.08)",
+          borderWidth: 2,
+          pointBackgroundColor: "rgba(107,143,113,0.9)",
+          pointRadius: 3.5,
+          pointHoverRadius: 5,
+          fill: true,
+          tension: 0.35,
+          yAxisID: "yUnits",
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: "top",
+          align: "end",
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            borderRadius: 3,
+            useBorderRadius: true,
+            padding: 12,
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "#7a6a5e",
+          },
+        },
+        tooltip: {
+          backgroundColor: "rgba(44,24,16,0.92)",
+          titleColor: "rgba(245,230,211,0.7)",
+          bodyColor: "#f5e6d3",
+          padding: 10,
+          cornerRadius: 8,
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (ctx) =>
+              ctx.dataset.label === "Revenue"
+                ? `  Revenue: ${fmt.format(ctx.parsed.y)}`
+                : `  Units: ${fmtNum.format(ctx.parsed.y)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "#7a6a5e",
+            maxRotation: 0,
+          },
+        },
+        y: {
+          position: "left",
+          grid: { color: "rgba(232,221,208,0.45)", drawTicks: false },
+          border: { display: false },
+          ticks: {
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "#7a6a5e",
+            padding: 6,
+            callback: (v) => fmt.format(v),
+          },
+        },
+        yUnits: {
+          position: "right",
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "rgba(107,143,113,0.75)",
+            padding: 6,
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderCategoryDonutChart(categories) {
+  const canvas = document.getElementById("chart-category-donut");
+  const wrap = document.getElementById("chart-cat-donut-wrap");
+  destroyChart("categoryDonut");
+
+  if (!canvas || typeof Chart === "undefined") return;
+
+  const hasCats = categories && categories.length > 0;
+  if (wrap) wrap.hidden = !hasCats;
+  if (!hasCats) return;
+
+  const labels = categories.map((c) => c.name);
+  const data = categories.map((c) => c.revenue);
+  const total = data.reduce((s, v) => s + v, 0);
+  const colors = labels.map((n) => categoryAccent(n));
+
+  state.charts.categoryDonut = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [
+        {
+          data,
+          backgroundColor: colors,
+          borderColor: "#ffffff",
+          borderWidth: 2.5,
+          hoverOffset: 6,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: "68%",
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(44,24,16,0.92)",
+          titleColor: "rgba(245,230,211,0.7)",
+          bodyColor: "#f5e6d3",
+          padding: 10,
+          cornerRadius: 8,
+          callbacks: {
+            label: (ctx) => {
+              const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+              return `  ${ctx.label}: ${fmt.format(ctx.parsed)} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
 function renderDashboard(d) {
   const todayLabel = d.today_date
     ? formatDateLabel(d.today_date)
     : "Today";
 
   document.getElementById("dashboard-stats").innerHTML = `
-    ${statCard("revenue", UI_ICONS.revenue, "Sold Today", fmt.format(d.revenue_today), `${fmtNum.format(d.units_sold_today)} units · ${todayLabel}`, "", true)}
-    ${statCard("sales", UI_ICONS.sales, "This Week", fmt.format(d.revenue_week), `${fmtNum.format(d.units_sold_week)} units`)}
-    ${statCard("month", UI_ICONS.chart, "This Month", fmt.format(d.revenue_month), `${fmtNum.format(d.units_sold_month)} units`)}
-    ${statCard("stock", UI_ICONS.stock, "Inventory", fmt.format(d.inventory_value), `${d.total_products} products`)}
-    ${statCard("alert", UI_ICONS.alert, "Alerts", d.low_stock_count, `${d.out_of_stock_count} out of stock`)}
+    ${statCardComparison("revenue", UI_ICONS.revenue, "Sold Today", fmt.format(d.revenue_today),
+      `${fmtNum.format(d.units_sold_today)} units · ${todayLabel}`,
+      d.revenue_today, d.revenue_yesterday, "yesterday", true)}
+    ${statCardComparison("sales", UI_ICONS.sales, "This Week", fmt.format(d.revenue_week),
+      `${fmtNum.format(d.units_sold_week)} units`,
+      d.revenue_week, d.revenue_prev_week, "last week")}
+    ${statCardComparison("month", UI_ICONS.chart, "This Month", fmt.format(d.revenue_month),
+      `${fmtNum.format(d.units_sold_month)} units`,
+      d.revenue_month, d.revenue_prev_month, "last month")}
+    ${statCardComparison("stock", UI_ICONS.stock, "Inventory Value", fmt.format(d.inventory_value),
+      `${d.total_products} products`, null, null, null)}
+    ${statCardComparison("alert", UI_ICONS.alert, "Stock Alerts", d.low_stock_count,
+      `${d.out_of_stock_count} out of stock`, null, null, null)}
   `;
 
   const labelEl = document.getElementById("low-stock-label");
@@ -691,15 +932,28 @@ function renderDashboard(d) {
         .join("")}</div>`
     : emptyState(UI_ICONS.box, "No products yet", "Add products to see category breakdown.", true);
 
+  renderCategoryDonutChart(d.sales_by_category_today || []);
   const salesCategoryToday = document.getElementById("sales-category-today");
   if (salesCategoryToday) {
-    salesCategoryToday.innerHTML = renderCategoryBars(
-      d.sales_by_category_today || [],
-      "revenue",
-      "No sales today",
-      "Category sales appear after your first sale today."
-    );
+    const catData = d.sales_by_category_today || [];
+    if (catData.length) {
+      salesCategoryToday.innerHTML = renderCategoryBars(
+        catData,
+        "revenue",
+        "No sales today",
+        "Category sales appear after your first sale today."
+      );
+    } else {
+      salesCategoryToday.innerHTML = emptyState(
+        UI_ICONS.chart,
+        "No sales today",
+        "Category sales appear after your first sale today.",
+        true
+      );
+    }
   }
+
+  requestAnimationFrame(() => renderRevenueChart(d.daily_revenue_7d || [], d.today_date));
 
   const recent = document.getElementById("recent-activity");
   if (!d.recent_transactions.length) {
@@ -2968,11 +3222,40 @@ function setSalesReportMode(mode) {
   }
 }
 
+function syncSalesUiFromState() {
+  // Sync period button active class to match restored state
+  document.querySelectorAll(".period-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.preset === state.salesPreset);
+  });
+
+  // Show/hide custom range bar and pre-fill saved dates
+  const customBar = document.getElementById("custom-range-bar");
+  if (customBar) customBar.hidden = state.salesPreset !== "custom";
+  if (state.salesPreset === "custom") {
+    const fromInput = document.getElementById("sales-from");
+    const toInput = document.getElementById("sales-to");
+    if (fromInput && state.salesFrom) fromInput.value = state.salesFrom;
+    if (toInput && state.salesTo) toInput.value = state.salesTo;
+  }
+
+  // Sync mode buttons and panel visibility
+  document.querySelectorAll(".sales-mode-btn").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.salesMode === state.salesReportMode);
+  });
+  const datePanel = document.getElementById("sales-date-report");
+  const shiftPanel = document.getElementById("sales-shift-report");
+  if (datePanel) datePanel.hidden = state.salesReportMode !== "date";
+  if (shiftPanel) shiftPanel.hidden = state.salesReportMode !== "shift";
+}
+
 function loadSalesViewData(from, to) {
+  // When preset is "custom" but no explicit dates passed, use stored dates as fallback
+  const f = from ?? (state.salesPreset === "custom" ? state.salesFrom : undefined);
+  const t = to ?? (state.salesPreset === "custom" ? state.salesTo : undefined);
   if (canViewShiftReports() && state.salesReportMode === "shift") {
-    loadShiftsReport(from, to);
+    loadShiftsReport(f, t);
   } else {
-    loadSalesReports(from, to);
+    loadSalesReports(f, t);
   }
 }
 
@@ -3028,7 +3311,8 @@ async function loadSalesReports(from, to) {
     } else if (state.salesPreset !== "custom") {
       url += `preset=${state.salesPreset}`;
     } else {
-      return;
+      // custom preset with no dates — fall back to today
+      url += `preset=today`;
     }
     if (sellerId) url += `&user_id=${encodeURIComponent(sellerId)}`;
 
@@ -3038,6 +3322,216 @@ async function loadSalesReports(from, to) {
     renderSalesReport(state.salesReport);
   } catch (e) {
     toast(e.message, "error");
+  }
+}
+
+const PAYMENT_COLORS = {
+  cash: "#6b8f71",
+  momo: "#d4a03c",
+  card: "#5d7fa3",
+  visa: "#5d7fa3",
+  other: "#a89888",
+};
+
+function renderSalesTrendChart(dailyBreakdown, selectedDate) {
+  const canvas = document.getElementById("chart-sales-trend");
+  destroyChart("salesTrend");
+  if (!canvas || typeof Chart === "undefined" || !dailyBreakdown.length) return;
+
+  const labels = dailyBreakdown.map((d) => {
+    const dt = new Date(d.date + "T00:00:00");
+    return dailyBreakdown.length === 1
+      ? formatDateLabel(d.date)
+      : dt.toLocaleDateString("en", { month: "short", day: "numeric" });
+  });
+  const revenues = dailyBreakdown.map((d) => d.revenue);
+  const units = dailyBreakdown.map((d) => d.units);
+
+  const bgColors = dailyBreakdown.map((d) =>
+    d.date === selectedDate ? "#5d4037" : "rgba(196,165,116,0.42)"
+  );
+  const borderColors = dailyBreakdown.map((d) =>
+    d.date === selectedDate ? "#3d2618" : "rgba(196,165,116,0.65)"
+  );
+
+  state.charts.salesTrend = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Revenue",
+          data: revenues,
+          backgroundColor: bgColors,
+          borderColor: borderColors,
+          borderWidth: 1.5,
+          borderRadius: 5,
+          borderSkipped: false,
+          order: 2,
+        },
+        {
+          label: "Units",
+          data: units,
+          type: "line",
+          borderColor: "rgba(107,143,113,0.65)",
+          backgroundColor: "rgba(107,143,113,0.07)",
+          borderWidth: 1.75,
+          pointBackgroundColor: "rgba(107,143,113,0.85)",
+          pointRadius: dailyBreakdown.length > 20 ? 2 : 3,
+          pointHoverRadius: 5,
+          fill: true,
+          tension: 0.35,
+          yAxisID: "yUnits",
+          order: 1,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      onClick: (_e, elements) => {
+        if (elements.length) {
+          const idx = elements[0].index;
+          selectSalesDate(dailyBreakdown[idx].date);
+        }
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: "top",
+          align: "end",
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            borderRadius: 3,
+            useBorderRadius: true,
+            padding: 12,
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "#7a6a5e",
+          },
+        },
+        tooltip: {
+          backgroundColor: "rgba(44,24,16,0.92)",
+          titleColor: "rgba(245,230,211,0.7)",
+          bodyColor: "#f5e6d3",
+          padding: 10,
+          cornerRadius: 8,
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (ctx) =>
+              ctx.dataset.label === "Revenue"
+                ? `  Revenue: ${fmt.format(ctx.parsed.y)}`
+                : `  Units: ${fmtNum.format(ctx.parsed.y)}`,
+            afterBody: () => ["  Click bar to filter detail table"],
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "#7a6a5e",
+            maxRotation: 45,
+            autoSkip: true,
+            maxTicksLimit: 14,
+          },
+        },
+        y: {
+          position: "left",
+          grid: { color: "rgba(232,221,208,0.45)", drawTicks: false },
+          border: { display: false },
+          ticks: {
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "#7a6a5e",
+            padding: 6,
+            callback: (v) => fmt.format(v),
+          },
+        },
+        yUnits: {
+          position: "right",
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            font: { size: 11, family: "'Plus Jakarta Sans', system-ui" },
+            color: "rgba(107,143,113,0.7)",
+            padding: 6,
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderSalesDonut(canvasId, legendId, items, labelKey, valueKey, colorFn) {
+  const canvas = document.getElementById(canvasId);
+  const legendEl = document.getElementById(legendId);
+  const chartKey = canvasId.replace("chart-", "").replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  destroyChart(chartKey);
+
+  if (!canvas || typeof Chart === "undefined") return;
+
+  const filtered = (items || []).filter((item) => item[valueKey] > 0);
+
+  if (!filtered.length) {
+    if (legendEl) legendEl.innerHTML = `<p style="font-size:0.78rem;color:var(--text-subtle)">No data</p>`;
+    return;
+  }
+
+  const labels = filtered.map((item) => item[labelKey]);
+  const data = filtered.map((item) => item[valueKey]);
+  const colors = filtered.map((item, i) => colorFn(item, i));
+  const total = data.reduce((s, v) => s + v, 0);
+
+  state.charts[chartKey] = new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [
+        {
+          data,
+          backgroundColor: colors,
+          borderColor: "#ffffff",
+          borderWidth: 2,
+          hoverOffset: 5,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: "66%",
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: "rgba(44,24,16,0.92)",
+          bodyColor: "#f5e6d3",
+          padding: 10,
+          cornerRadius: 8,
+          callbacks: {
+            label: (ctx) => {
+              const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+              return `  ${ctx.label}: ${fmt.format(ctx.parsed)} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (legendEl) {
+    legendEl.innerHTML = filtered
+      .map(
+        (item, i) => `
+      <div class="donut-legend-item">
+        <span class="donut-legend-dot" style="background:${colors[i]}"></span>
+        <span class="donut-legend-name">${esc(item[labelKey])}</span>
+        <span class="donut-legend-value">${fmt.format(item[valueKey])}</span>
+      </div>`
+      )
+      .join("");
   }
 }
 
@@ -3051,60 +3545,38 @@ function renderSalesReport(report) {
     ${statCard("alert", UI_ICONS.calendar, "Active Days", daily_breakdown.length, "days with sales")}
   `;
 
-  const payments = payment_breakdown || [];
-  const breakdownEl = document.getElementById("sales-payment-breakdown");
-  if (breakdownEl) {
-    breakdownEl.innerHTML = `
-      <h3 class="payment-breakdown-title">Revenue by Payment</h3>
-      <div class="payment-breakdown-grid">
-        ${payments
-          .map(
-            (p) => `
-          <div class="payment-breakdown-card payment-${p.method}">
-            <span class="payment-breakdown-label">${esc(p.label)}</span>
-            <strong class="payment-breakdown-value">${fmt.format(p.revenue)}</strong>
-            <span class="payment-breakdown-sub">${fmtNum.format(p.checkouts)} checkout${p.checkouts !== 1 ? "s" : ""}</span>
-          </div>`
-          )
-          .join("")}
-      </div>
-    `;
-  }
-
-  const categoryEl = document.getElementById("sales-category-breakdown");
-  if (categoryEl) {
-    const categories = category_breakdown || [];
-    if (!categories.length) {
-      categoryEl.innerHTML = "";
-    } else {
-      const maxRevenue = Math.max(...categories.map((c) => c.revenue), 1);
-      categoryEl.innerHTML = `
-        <h3 class="payment-breakdown-title">Revenue by Category</h3>
-        <div class="category-breakdown-grid">
-          ${categories
-            .map(
-              (c) => `
-            <div class="category-breakdown-card" style="--cat-accent: ${categoryAccent(c.name)}">
-              <span class="category-breakdown-label">${esc(c.name)}</span>
-              <strong class="category-breakdown-value">${fmt.format(c.revenue)}</strong>
-              <span class="category-breakdown-sub">${fmtNum.format(c.units)} units · ${fmtNum.format(c.transactions)} sale${c.transactions !== 1 ? "s" : ""}</span>
-              <div class="category-breakdown-bar" style="width:${(c.revenue / maxRevenue) * 100}%"></div>
-            </div>`
-            )
-            .join("")}
-        </div>
-      `;
-    }
-  }
-
   document.getElementById("sales-range-label").textContent = formatRangeLabel(from, to);
 
+  const chartsRow = document.getElementById("sales-charts-row");
+  const trendLabel = document.getElementById("sales-trend-label");
   const datesList = document.getElementById("sales-dates-list");
+
   if (!daily_breakdown.length) {
+    if (chartsRow) chartsRow.hidden = true;
+    destroyChart("salesTrend");
+    destroyChart("salesPayment");
+    destroyChart("salesCat");
     datesList.innerHTML = emptyState(UI_ICONS.chart, "No sales", "No sales recorded in this period.");
     renderSalesDetail([], null);
     return;
   }
+
+  if (chartsRow) chartsRow.hidden = false;
+  if (trendLabel) trendLabel.textContent = formatRangeLabel(from, to);
+
+  requestAnimationFrame(() => {
+    renderSalesTrendChart(daily_breakdown, state.selectedSalesDate);
+    renderSalesDonut(
+      "chart-sales-payment", "sales-payment-legend",
+      payment_breakdown, "label", "revenue",
+      (p) => PAYMENT_COLORS[p.method] || "#c4a574"
+    );
+    renderSalesDonut(
+      "chart-sales-cat", "sales-cat-legend",
+      category_breakdown, "name", "revenue",
+      (c) => categoryAccent(c.name)
+    );
+  });
 
   const maxRevenue = Math.max(...daily_breakdown.map((d) => d.revenue), 1);
   datesList.innerHTML = daily_breakdown
@@ -3186,7 +3658,8 @@ async function loadShiftsReport(from, to) {
     } else if (state.salesPreset !== "custom") {
       url += `preset=${state.salesPreset}`;
     } else {
-      return;
+      // custom preset with no dates — fall back to today
+      url += `preset=today`;
     }
     if (sellerId) url += `&user_id=${encodeURIComponent(sellerId)}`;
 
