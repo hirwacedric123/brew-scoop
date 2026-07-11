@@ -49,14 +49,6 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>My Shift</span>
         </button>
-        <button class="nav-item seller-reports-nav" data-view="history" hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span>History</span>
-        </button>
-        <button class="nav-item seller-reports-nav" data-view="sales" hidden>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
-          <span>Sales Reports</span>
-        </button>
         {% else %}
         <button class="nav-item" data-view="restock">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
@@ -603,12 +595,29 @@
                   </div>
                 </div>
 
-                <div class="shift-concerns-form">
+                <div class="shift-report-form">
                   <div class="payment-count-head">
-                    <label for="shift-concerns">Concerns for admin <span class="shift-field-optional">(optional)</span></label>
-                    <p class="shift-field-hint">Flag anything the admin should know — low stock, equipment issues, or other problems from this shift.</p>
+                    <label>End-of-shift report for admin <span class="shift-field-optional">(optional)</span></label>
+                    <p class="shift-field-hint">Fill in anything the admin should know from this shift.</p>
                   </div>
-                  <textarea id="shift-concerns" class="shift-concerns-input" rows="3" maxlength="2000" placeholder="e.g. Running low on medium cups; fridge not cooling well."></textarea>
+                  <div class="shift-report-fields">
+                    <div class="shift-report-field">
+                      <label for="shift-report-low-stock">Low stock / items to restock</label>
+                      <textarea id="shift-report-low-stock" class="shift-report-input" rows="2" maxlength="2000" placeholder="e.g. Running low on medium cups and oat milk."></textarea>
+                    </div>
+                    <div class="shift-report-field">
+                      <label for="shift-report-issues">Issues met during the shift</label>
+                      <textarea id="shift-report-issues" class="shift-report-input" rows="2" maxlength="2000" placeholder="e.g. Fridge not cooling well; card machine was slow."></textarea>
+                    </div>
+                    <div class="shift-report-field">
+                      <label for="shift-report-wishes">Wishes / suggestions</label>
+                      <textarea id="shift-report-wishes" class="shift-report-input" rows="2" maxlength="2000" placeholder="e.g. Would help to add a second blender."></textarea>
+                    </div>
+                    <div class="shift-report-field">
+                      <label for="shift-concerns">Anything else</label>
+                      <textarea id="shift-concerns" class="shift-report-input" rows="2" maxlength="2000" placeholder="Any other notes for the admin."></textarea>
+                    </div>
+                  </div>
                 </div>
 
                 <button type="submit" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-close" id="btn-reconcile">
@@ -619,11 +628,11 @@
             </div>
 
             <div class="shift-panel shift-panel-result card" id="shift-result-card" hidden>
-              <div id="reconcile-result"></div>
               <button type="button" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-start" id="btn-new-shift">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Start new shift
               </button>
+              <div id="reconcile-result"></div>
             </div>
           </div>
         </div>
@@ -1220,14 +1229,6 @@
       <button type="button" class="bottom-nav-item" data-view="reconcile">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <span>My Shift</span>
-      </button>
-      <button type="button" class="bottom-nav-item seller-reports-nav" data-view="history" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <span>History</span>
-      </button>
-      <button type="button" class="bottom-nav-item seller-reports-nav" data-view="sales" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
-        <span>Reports</span>
       </button>
       {% else %}
       <button type="button" class="bottom-nav-item" data-view="products">
