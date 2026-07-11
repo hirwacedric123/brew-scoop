@@ -1051,6 +1051,10 @@ def admin_delete_user(user_id):
     if not row:
         return jsonify({"error": "User not found"}), 404
 
+    # transactions.user_id and transactions.voided_by were added via ALTER TABLE
+    # without ON DELETE CASCADE, so NULL them out before deleting the user.
+    db.execute("UPDATE transactions SET user_id = NULL WHERE user_id = ?", (user_id,))
+    db.execute("UPDATE transactions SET voided_by = NULL WHERE voided_by = ?", (user_id,))
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
     return jsonify({"message": "User deleted"})
