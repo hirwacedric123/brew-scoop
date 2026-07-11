@@ -38,10 +38,12 @@
           <span>Products</span>
         </button>
         {% endif %}
+        {% if current_user.role != 'admin' %}
         <button class="nav-item{% if current_user.role == 'seller' %} active{% endif %}" data-view="sell">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           <span>Sell</span>
         </button>
+        {% endif %}
         {% if current_user.role == 'seller' %}
         <button class="nav-item" data-view="reconcile">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -115,10 +117,12 @@
           </div>
           <div class="dashboard-topbar-end">
             <div class="date-badge" id="current-date"></div>
+            {% if current_user.role != 'admin' %}
             <button type="button" class="btn btn-primary btn-sm dashboard-cta" data-view="sell">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               New Sale
             </button>
+            {% endif %}
           </div>
         </header>
 
@@ -146,6 +150,23 @@
         <div class="dashboard-stats" id="dashboard-stats"></div>
 
         <div class="dashboard-grid">
+
+          <!-- Revenue Trend Chart (7 days) -->
+          <div class="card dashboard-card card-wide">
+            <div class="card-header">
+              <div class="card-title-group">
+                <span class="card-title-icon card-title-icon-mint">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+                </span>
+                <h3>Revenue Trend</h3>
+              </div>
+              <span class="text-muted chart-range-label">Last 7 days</span>
+            </div>
+            <div class="card-body chart-bar-body">
+              <canvas id="chart-revenue-7d" aria-label="7-day revenue trend"></canvas>
+            </div>
+          </div>
+
           <div class="card dashboard-card">
             <div class="card-header">
               <div class="card-title-group">
@@ -172,7 +193,8 @@
             <div class="card-body card-body-flush" id="top-products-list"></div>
           </div>
 
-          <div class="card dashboard-card">
+          <!-- Sales by Category: donut + legend -->
+          <div class="card dashboard-card card-wide">
             <div class="card-header">
               <div class="card-title-group">
                 <span class="card-title-icon card-title-icon-caramel">
@@ -182,7 +204,12 @@
               </div>
               <span class="text-muted">Today</span>
             </div>
-            <div class="card-body" id="sales-category-today"></div>
+            <div class="card-body chart-cat-body">
+              <div class="chart-cat-donut" id="chart-cat-donut-wrap">
+                <canvas id="chart-category-donut" aria-label="Sales by category donut"></canvas>
+              </div>
+              <div id="sales-category-today" class="chart-cat-legend"></div>
+            </div>
           </div>
 
           <div class="card dashboard-card card-wide">
@@ -947,9 +974,60 @@
         <div id="sales-date-report">
           <div class="stats-grid" id="sales-summary-stats"></div>
 
-          <div class="payment-breakdown" id="sales-payment-breakdown"></div>
+          <!-- Charts row: daily trend (left) + payment & category donuts (right) -->
+          <div class="sales-charts-row" id="sales-charts-row" hidden>
 
-          <div class="category-breakdown-section" id="sales-category-breakdown"></div>
+            <div class="card sales-trend-card">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <span class="card-title-icon card-title-icon-mint">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
+                  </span>
+                  <h3>Revenue by Day</h3>
+                </div>
+                <span class="text-muted" id="sales-trend-label"></span>
+              </div>
+              <div class="card-body chart-bar-body sales-trend-body">
+                <canvas id="chart-sales-trend" aria-label="Revenue by day chart"></canvas>
+              </div>
+            </div>
+
+            <div class="sales-side-charts">
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title-group">
+                    <span class="card-title-icon card-title-icon-amber">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                    </span>
+                    <h3>By Payment</h3>
+                  </div>
+                </div>
+                <div class="card-body chart-cat-body chart-cat-body-sm">
+                  <div class="chart-cat-donut chart-cat-donut-sm">
+                    <canvas id="chart-sales-payment"></canvas>
+                  </div>
+                  <div id="sales-payment-legend" class="chart-cat-legend donut-legend-list"></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title-group">
+                    <span class="card-title-icon card-title-icon-caramel">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </span>
+                    <h3>By Category</h3>
+                  </div>
+                </div>
+                <div class="card-body chart-cat-body chart-cat-body-sm">
+                  <div class="chart-cat-donut chart-cat-donut-sm">
+                    <canvas id="chart-sales-cat"></canvas>
+                  </div>
+                  <div id="sales-cat-legend" class="chart-cat-legend donut-legend-list"></div>
+                </div>
+              </div>
+            </div>
+          </div><!-- /sales-charts-row -->
 
           <div class="sales-layout">
             <div class="card">
@@ -1124,10 +1202,12 @@
         <span>Home</span>
       </button>
       {% endif %}
+      {% if current_user.role != 'admin' %}
       <button type="button" class="bottom-nav-item bottom-nav-sell{% if current_user.role == 'seller' %} active{% endif %}" data-view="sell">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
         <span>Sell</span>
       </button>
+      {% endif %}
       {% if current_user.role == 'seller' %}
       <button type="button" class="bottom-nav-item" data-view="reconcile">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -1408,6 +1488,7 @@
       window.location.replace("/change-password");
     }
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
