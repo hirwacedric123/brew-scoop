@@ -128,10 +128,10 @@ def init_db():
         """
     )
     _init_categories_table(db)
-    _migrate_db(db)
-    _seed_categories(db)
     init_users_table(db)
     init_password_reset_table(db)
+    _migrate_db(db)
+    _seed_categories(db)
     _seed_default_admin(db)
     db.commit()
     db.close()
