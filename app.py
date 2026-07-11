@@ -1457,7 +1457,7 @@ def create_sale():
 
 
 @app.route("/api/sales/checkout", methods=["POST"])
-@login_required
+@role_required("seller", "stock_manager")
 def checkout_sale():
     data = request.get_json(silent=True) or {}
     items, error = _normalize_checkout_items(data.get("items"))
