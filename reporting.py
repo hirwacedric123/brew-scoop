@@ -539,3 +539,254 @@ def render_seller_report_text(report):
         f"Transactions: {summary['transactions']}",
     ]
     return "\n".join(lines)
+
+
+SHIFT_STATUS_STYLES = {
+    "balanced": ("Balanced", "#1f7a4d", "#e7f4ec"),
+    "short": ("Short", "#b3261e", "#fbe9e7"),
+    "over": ("Over", "#8a6d1f", "#fbf3d9"),
+}
+
+SHIFT_REPORT_LABELS = (
+    ("report_low_stock", "Low stock / to restock"),
+    ("report_issues", "Issues met"),
+    ("report_wishes", "Wishes / suggestions"),
+    ("concerns", "Other notes"),
+)
+
+
+def _format_shift_datetime(value):
+    if not value:
+        return "—"
+    try:
+        parsed = datetime.strptime(value[:19], "%Y-%m-%dT%H:%M:%S")
+    except (ValueError, TypeError):
+        return value
+    return parsed.strftime("%b %d, %Y · %H:%M")
+
+
+def _format_variance(variance):
+    variance = variance or 0
+    if variance == 0:
+        return "Balanced"
+    sign = "+" if variance > 0 else "-"
+    return f"{sign}{format_currency(abs(variance))}"
+
+
+def _shift_report_entries(shift):
+    return [
+        (label, shift.get(key))
+        for key, label in SHIFT_REPORT_LABELS
+        if shift.get(key)
+    ]
+
+
+def _shift_total_variance(shift):
+    return round(
+        (shift.get("variance") or 0)
+        + (shift.get("momo_variance") or 0)
+        + (shift.get("visa_variance") or 0),
+        2,
+    )
+
+
+def _shift_summary_sentence(shift, seller_name):
+    total_sales = shift.get("total_sales") or 0
+    units = shift.get("units_sold") or 0
+    sale_count = shift.get("sale_count") or 0
+    status = shift.get("status_label") or "balanced"
+    total_variance = _shift_total_variance(shift)
+
+    parts = [
+        f"{seller_name} sold {format_currency(total_sales)} "
+        f"({units} unit{'s' if units != 1 else ''} across "
+        f"{sale_count} sale{'s' if sale_count != 1 else ''})."
+    ]
+    if status == "balanced" or total_variance == 0:
+        parts.append("All payment counts matched the recorded sales.")
+    elif total_variance > 0:
+        parts.append(
+            f"The till came out over by {format_currency(abs(total_variance))} "
+            "versus recorded sales."
+        )
+    else:
+        parts.append(
+            f"The till fell short by {format_currency(abs(total_variance))} "
+            "versus recorded sales."
+        )
+    return " ".join(parts)
+
+
+def _aggregate_shift_products(shift, limit=8):
+    totals = {}
+    for sale in shift.get("sales") or []:
+        if sale.get("is_voided"):
+            continue
+        name = sale.get("product_name") or "Unknown"
+        entry = totals.setdefault(name, {"units": 0, "revenue": 0})
+        entry["units"] += sale.get("quantity") or 0
+        entry["revenue"] += sale.get("total_amount") or 0
+    ranked = sorted(
+        totals.items(),
+        key=lambda kv: (kv[1]["revenue"], kv[1]["units"]),
+        reverse=True,
+    )
+    return ranked[:limit]
+
+
+def render_shift_close_html(shift, seller_name):
+    status = shift.get("status_label") or "balanced"
+    label, color, bg = SHIFT_STATUS_STYLES.get(status, SHIFT_STATUS_STYLES["balanced"])
+    badge = (
+        f'<span style="display:inline-block;padding:3px 12px;border-radius:999px;'
+        f'background:{bg};color:{color};font-size:13px;font-weight:bold;">'
+        f"{escape(label)}</span>"
+    )
+
+    body = (
+        f'<div style="margin-bottom:8px;">'
+        f'<p style="margin:0 0 6px;font-size:15px;">'
+        f"<strong>{escape(seller_name)}</strong> just closed a shift. {badge}</p>"
+        f'<p style="margin:0;color:#7a6a5c;font-size:13px;">'
+        f"{escape(_format_shift_datetime(shift.get('opened_at')))} &rarr; "
+        f"{escape(_format_shift_datetime(shift.get('closed_at')))}</p>"
+        f"</div>"
+    )
+
+    body += (
+        f'<div style="margin-top:16px;background:{bg};border:1px solid {color}33;'
+        f'border-left:4px solid {color};border-radius:10px;padding:14px 16px;">'
+        f'<p style="margin:0;font-size:14px;color:#2b2118;line-height:1.5;">'
+        f"{escape(_shift_summary_sentence(shift, seller_name))}</p>"
+        f"</div>"
+    )
+
+    body += _stat_cards(
+        [
+            ("Total sales", format_currency(shift.get("total_sales") or 0)),
+            ("Units sold", str(shift.get("units_sold") or 0)),
+            ("Sales", str(shift.get("sale_count") or 0)),
+        ]
+    )
+
+    recon_rows = [
+        (
+            "Cash",
+            format_currency(shift.get("counted_cash") or 0),
+            format_currency(shift.get("expected_cash") or 0),
+            _format_variance(shift.get("variance")),
+        ),
+        (
+            "MoMo",
+            format_currency(shift.get("counted_momo") or 0),
+            format_currency(shift.get("expected_momo") or 0),
+            _format_variance(shift.get("momo_variance")),
+        ),
+        (
+            "Visa",
+            format_currency(shift.get("counted_visa") or 0),
+            format_currency(shift.get("expected_visa") or 0),
+            _format_variance(shift.get("visa_variance")),
+        ),
+    ]
+    body += _section(
+        "Payment reconciliation",
+        _table(["Method", "Counted", "Expected", "Variance"], recon_rows),
+    )
+
+    sales_rows = [
+        ("Cash", format_currency(shift.get("cash_sales") or 0)),
+        ("MoMo", format_currency(shift.get("momo_sales") or 0)),
+        ("Visa", format_currency(shift.get("visa_sales") or 0)),
+    ]
+    body += _section(
+        "Sales by payment method",
+        _table(["Method", "Recorded sales"], sales_rows),
+    )
+
+    product_totals = _aggregate_shift_products(shift)
+    if product_totals:
+        product_rows = [
+            (escape(name), str(data["units"]), format_currency(data["revenue"]))
+            for name, data in product_totals
+        ]
+        body += _section(
+            "What sold this shift",
+            _table(["Product", "Units", "Revenue"], product_rows),
+        )
+
+    notes = shift.get("cash_notes") or {}
+    denom_rows = []
+    for denom in ("5000", "2000", "1000", "500", "100"):
+        qty = notes.get(denom) or notes.get(int(denom)) or 0
+        if qty:
+            denom_rows.append(
+                (f"{int(denom):,}", str(qty), format_currency(int(denom) * qty))
+            )
+    if denom_rows:
+        body += _section(
+            "Cash notes counted",
+            _table(["Denomination", "Qty", "Subtotal"], denom_rows),
+        )
+
+    report_entries = _shift_report_entries(shift)
+    if report_entries:
+        blocks = ""
+        for label, value in report_entries:
+            blocks += (
+                f'<div style="margin-top:10px;">'
+                f'<div style="font-size:12px;font-weight:bold;text-transform:uppercase;'
+                f'letter-spacing:0.04em;color:#8a6d1f;">{escape(label)}</div>'
+                f'<div style="margin-top:2px;white-space:pre-wrap;">{escape(value)}</div>'
+                f"</div>"
+            )
+        report_box = (
+            f'<div style="background:#fdf4e3;border:1px solid #ecd9b0;border-radius:10px;'
+            f'padding:12px 16px;">{blocks}</div>'
+        )
+        body += _section("Seller's end-of-shift report", report_box)
+
+    title = f"Shift closed — {seller_name}"
+    return _email_shell(title, body).replace(
+        "Automated daily report from Brew &amp; Scoop.",
+        "Shift close notification from Brew &amp; Scoop.",
+    )
+
+
+def render_shift_close_text(shift, seller_name):
+    status = (shift.get("status_label") or "balanced").title()
+    lines = [
+        f"Shift closed — {seller_name}",
+        f"{_format_shift_datetime(shift.get('opened_at'))} -> "
+        f"{_format_shift_datetime(shift.get('closed_at'))}",
+        f"Status: {status}",
+        "",
+        _shift_summary_sentence(shift, seller_name),
+        "",
+        f"Total sales: {format_currency(shift.get('total_sales') or 0)}",
+        f"Units sold: {shift.get('units_sold') or 0}",
+        f"Sales: {shift.get('sale_count') or 0}",
+        "",
+        "Payment reconciliation (counted / expected / variance):",
+        f"  Cash: {format_currency(shift.get('counted_cash') or 0)} / "
+        f"{format_currency(shift.get('expected_cash') or 0)} / "
+        f"{_format_variance(shift.get('variance'))}",
+        f"  MoMo: {format_currency(shift.get('counted_momo') or 0)} / "
+        f"{format_currency(shift.get('expected_momo') or 0)} / "
+        f"{_format_variance(shift.get('momo_variance'))}",
+        f"  Visa: {format_currency(shift.get('counted_visa') or 0)} / "
+        f"{format_currency(shift.get('expected_visa') or 0)} / "
+        f"{_format_variance(shift.get('visa_variance'))}",
+    ]
+    product_totals = _aggregate_shift_products(shift)
+    if product_totals:
+        lines.extend(["", "What sold this shift:"])
+        lines.extend(
+            f"  {name}: {data['units']} units, {format_currency(data['revenue'])}"
+            for name, data in product_totals
+        )
+    report_entries = _shift_report_entries(shift)
+    if report_entries:
+        lines.extend(["", "Seller's end-of-shift report:"])
+        lines.extend(f"  {label}: {value}" for label, value in report_entries)
+    return "\n".join(lines)
