@@ -263,6 +263,8 @@ def _migrate_db(db):
             "ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
         )
 
+    _migrate_users_supervisor_role(db)
+
     init_password_reset_table(db)
 
     shift_cols = {
@@ -342,6 +344,41 @@ def _migrate_users_role_check(db):
             updated_at TEXT NOT NULL
         );
         INSERT INTO users_new SELECT * FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+        CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+        """
+    )
+
+
+def _migrate_users_supervisor_role(db):
+    """Rebuild the users table so the role CHECK constraint allows 'supervisor'."""
+    sql_row = db.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if not sql_row or "supervisor" in (sql_row[0] or ""):
+        return
+    db.executescript(
+        """
+        CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            password_hash TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            email TEXT,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'supervisor', 'stock_manager', 'seller')),
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+            must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO users_new
+            (id, username, password_hash, display_name, email, role,
+             is_active, must_change_password, created_at, updated_at)
+            SELECT id, username, password_hash, display_name, email, role,
+                   is_active, must_change_password, created_at, updated_at
+            FROM users;
         DROP TABLE users;
         ALTER TABLE users_new RENAME TO users;
         CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -879,7 +916,7 @@ def auth_me():
 # ── Admin API ──────────────────────────────────────────────────────────────
 
 @app.route("/api/admin/users", methods=["GET"])
-@admin_required
+@role_required("admin", "supervisor")
 def admin_list_users():
     rows = get_db().execute(
         "SELECT * FROM users ORDER BY role ASC, username ASC"
@@ -888,7 +925,7 @@ def admin_list_users():
 
 
 @app.route("/api/admin/attendance", methods=["GET"])
-@admin_required
+@role_required("admin", "supervisor")
 def admin_attendance():
     date_from = request.args.get("from", "").strip() or today_kigali()
     date_to = request.args.get("to", "").strip() or date_from
@@ -2036,7 +2073,7 @@ def seller_shift_close():
 
 
 @app.route("/api/restock", methods=["POST"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def restock_product():
     data = request.get_json(silent=True) or {}
     product_id = data.get("product_id")
@@ -2198,7 +2235,7 @@ def adjust_cups():
 # ── Transactions & Dashboard API ─────────────────────────────────────────────
 
 @app.route("/api/transactions", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def list_transactions():
     db = get_db()
 
@@ -2241,7 +2278,7 @@ def list_transactions():
 
 
 @app.route("/api/sellers", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def list_sellers():
     rows = get_db().execute(
         """SELECT id, display_name, username
@@ -2260,7 +2297,7 @@ def list_sellers():
 
 
 @app.route("/api/sales/dates", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def sales_dates():
     db = get_db()
     rows = db.execute(
@@ -2285,7 +2322,7 @@ def sales_dates():
 
 
 @app.route("/api/sales/report", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def sales_report():
     db = get_db()
 
@@ -2454,7 +2491,7 @@ def _shifts_date_range_params():
 
 
 @app.route("/api/shifts/report", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def shifts_report():
     db = get_db()
 
@@ -2498,7 +2535,7 @@ def shifts_report():
 
 
 @app.route("/api/shifts/<int:shift_id>", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def shift_detail(shift_id):
     db = get_db()
 
@@ -2518,7 +2555,7 @@ def shift_detail(shift_id):
 
 
 @app.route("/api/dashboard", methods=["GET"])
-@role_required("admin", "stock_manager")
+@role_required("admin", "supervisor", "stock_manager")
 def dashboard_stats():
     db = get_db()
     category_cup_map = get_category_cup_map(db)
