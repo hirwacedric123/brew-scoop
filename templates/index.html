@@ -38,7 +38,7 @@
           <span>Products</span>
         </button>
         {% endif %}
-        {% if current_user.role != 'admin' %}
+        {% if current_user.role in ['seller', 'stock_manager'] %}
         <button class="nav-item{% if current_user.role == 'seller' %} active{% endif %}" data-view="sell">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           <span>Sell</span>
@@ -67,6 +67,11 @@
         <button class="nav-item" data-view="admin">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span>Team</span>
+        </button>
+        {% elif current_user.role == 'supervisor' %}
+        <button class="nav-item" data-view="admin">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+          <span>Attendance</span>
         </button>
         {% endif %}
       </nav>
@@ -109,7 +114,7 @@
           </div>
           <div class="dashboard-topbar-end">
             <div class="date-badge" id="current-date"></div>
-            {% if current_user.role != 'admin' %}
+            {% if current_user.role in ['seller', 'stock_manager'] %}
             <button type="button" class="btn btn-primary btn-sm dashboard-cta" data-view="sell">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
               New Sale
@@ -120,10 +125,12 @@
 
         <div class="dashboard-toolbar">
           <div class="quick-actions">
+            {% if current_user.role != 'supervisor' %}
             <button type="button" class="quick-action" id="btn-quick-add-product">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
               Add Product
             </button>
+            {% endif %}
             <button type="button" class="quick-action" data-view="restock">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
               Restock
@@ -241,10 +248,12 @@
               <p>Manage your inventory items</p>
             </div>
           </div>
+          {% if current_user.role != 'supervisor' %}
           <button class="btn btn-primary" id="btn-add-product">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
             Add Product
           </button>
+          {% endif %}
         </header>
 
         <div class="toolbar">
@@ -782,6 +791,7 @@
                 </div>
               </div>
 
+              {% if current_user.role != 'supervisor' %}
               <div class="card restock-card restock-card-adjust">
                 <div class="card-header">
                   <div class="card-title-group">
@@ -841,6 +851,7 @@
                   </form>
                 </div>
               </div>
+              {% endif %}
             </div>
           </div>
 
@@ -1106,25 +1117,34 @@
         </div>
       </section>
 
-      <!-- Admin -->
-      {% if current_user.role == 'admin' %}
+      <!-- Admin / Supervision -->
+      {% if current_user.role in ['admin', 'supervisor'] %}
       <section id="view-admin" class="view">
         <header class="topbar">
           <div class="topbar-heading">
             <div>
+              {% if current_user.role == 'admin' %}
               <p class="page-eyebrow page-eyebrow-danger">Settings</p>
               <h2>Administration</h2>
               <p>Manage team members and product categories</p>
+              {% else %}
+              <p class="page-eyebrow page-eyebrow-danger">Oversight</p>
+              <h2>Supervision</h2>
+              <p>Monitor staff attendance and active sessions</p>
+              {% endif %}
             </div>
           </div>
         </header>
 
         <div class="admin-tabs">
+          {% if current_user.role == 'admin' %}
           <button type="button" class="admin-tab active" data-admin-tab="team">Team</button>
           <button type="button" class="admin-tab" data-admin-tab="categories">Categories</button>
-          <button type="button" class="admin-tab" data-admin-tab="attendance">Attendance</button>
+          {% endif %}
+          <button type="button" class="admin-tab{% if current_user.role != 'admin' %} active{% endif %}" data-admin-tab="attendance">Attendance</button>
         </div>
 
+        {% if current_user.role == 'admin' %}
         <div id="admin-panel-team" class="admin-panel active">
           <div class="admin-panel-header">
             <h3>Team Management</h3>
@@ -1175,8 +1195,9 @@
             </table>
           </div>
         </div>
+        {% endif %}
 
-        <div id="admin-panel-attendance" class="admin-panel" hidden>
+        <div id="admin-panel-attendance" class="admin-panel{% if current_user.role != 'admin' %} active{% endif %}"{% if current_user.role == 'admin' %} hidden{% endif %}>
           <div class="admin-panel-header">
             <div>
               <h3>Attendance</h3>
@@ -1219,7 +1240,7 @@
         <span>Home</span>
       </button>
       {% endif %}
-      {% if current_user.role != 'admin' %}
+      {% if current_user.role in ['seller', 'stock_manager'] %}
       <button type="button" class="bottom-nav-item bottom-nav-sell{% if current_user.role == 'seller' %} active{% endif %}" data-view="sell">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
         <span>Sell</span>
@@ -1276,6 +1297,7 @@
           <select id="user-role">
             <option value="seller">Seller</option>
             <option value="stock_manager">Stock Manager</option>
+            <option value="supervisor">Supervisor</option>
             <option value="admin">Administrator</option>
           </select>
         </div>
