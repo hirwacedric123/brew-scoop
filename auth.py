@@ -8,7 +8,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
-ROLES = ("admin", "stock_manager", "seller")
+ROLES = ("admin", "supervisor", "stock_manager", "seller")
 
 
 def init_users_table(db):
@@ -20,7 +20,7 @@ def init_users_table(db):
             password_hash TEXT NOT NULL,
             display_name TEXT NOT NULL,
             email TEXT,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'stock_manager', 'seller')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'supervisor', 'stock_manager', 'seller')),
             is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
             must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0, 1)),
             created_at TEXT NOT NULL,
