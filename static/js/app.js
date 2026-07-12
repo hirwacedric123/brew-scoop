@@ -139,18 +139,21 @@ function isSeller() {
 
 function canViewShiftReports() {
   const role = state.currentUser?.role;
-  return role === "admin" || role === "stock_manager";
+  return role === "admin" || role === "supervisor" || role === "stock_manager";
 }
 
 function canAccessView(viewId) {
   const role = state.currentUser?.role;
-  if (role === "admin" && viewId === "sell") return false;
+  if ((role === "admin" || role === "supervisor") && (viewId === "sell" || viewId === "reconcile")) {
+    return false;
+  }
   if (!isSeller()) return true;
   return viewId === "sell" || viewId === "reconcile";
 }
 
 const ROLE_LABELS = {
   admin: "Administrator",
+  supervisor: "Supervisor",
   stock_manager: "Stock Manager",
   seller: "Seller",
 };
@@ -449,9 +452,12 @@ function switchAdminTab(tabId) {
   document.querySelectorAll(".admin-tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.adminTab === tabId);
   });
-  document.getElementById("admin-panel-team").hidden = tabId !== "team";
-  document.getElementById("admin-panel-categories").hidden = tabId !== "categories";
-  document.getElementById("admin-panel-attendance").hidden = tabId !== "attendance";
+  const teamPanel = document.getElementById("admin-panel-team");
+  const categoriesPanel = document.getElementById("admin-panel-categories");
+  const attendancePanel = document.getElementById("admin-panel-attendance");
+  if (teamPanel) teamPanel.hidden = tabId !== "team";
+  if (categoriesPanel) categoriesPanel.hidden = tabId !== "categories";
+  if (attendancePanel) attendancePanel.hidden = tabId !== "attendance";
 
   if (tabId === "team") loadUsers();
   if (tabId === "categories") loadCategoriesAdmin();
@@ -459,8 +465,11 @@ function switchAdminTab(tabId) {
 }
 
 function loadAdminView() {
-  if (!state.currentUser || state.currentUser.role !== "admin") return;
-  const activeTab = document.querySelector(".admin-tab.active")?.dataset.adminTab || "team";
+  const role = state.currentUser?.role;
+  if (!state.currentUser || (role !== "admin" && role !== "supervisor")) return;
+  const defaultTab = role === "admin" ? "team" : "attendance";
+  const activeTab =
+    document.querySelector(".admin-tab.active")?.dataset.adminTab || defaultTab;
   switchAdminTab(activeTab);
 }
 
@@ -971,6 +980,34 @@ function renderProductsTable(products) {
     return;
   }
 
+  const role = state.currentUser?.role;
+  const canManage = role === "admin" || role === "stock_manager";
+  const canSell = role === "admin" || role === "stock_manager";
+
+  const editBtn = (p) => `
+          <button class="btn-icon" title="Edit" onclick="openEditProduct(${p.id})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>`;
+  const sellBtn = (p) => `
+          <button class="btn-icon" title="Sell" onclick="quickSell(${p.id})">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+          </button>`;
+  const deleteBtn = (p) => `
+          <button class="btn-icon danger" title="Delete" onclick="openDeleteProduct(${p.id}, '${escAttr(p.name)}')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>`;
+
+  const rowActions = (p) => {
+    const buttons = [
+      canManage ? editBtn(p) : "",
+      canSell ? sellBtn(p) : "",
+      canManage ? deleteBtn(p) : "",
+    ].join("");
+    return buttons
+      ? `<div class="action-group">${buttons}</div>`
+      : `<span class="text-muted">View only</span>`;
+  };
+
   tbody.innerHTML = products
     .map(
       (p) => `
@@ -983,17 +1020,7 @@ function renderProductsTable(products) {
       <td><strong>${p.uses_cup_stock ? `${fmtNum.format(p.quantity)} cups` : fmtNum.format(p.quantity)}</strong></td>
       <td><span class="badge badge-stock ${p.stock_status}">${stockLabel(p)}</span></td>
       <td>
-        <div class="action-group">
-          <button class="btn-icon" title="Edit" onclick="openEditProduct(${p.id})">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-          <button class="btn-icon" title="Sell" onclick="quickSell(${p.id})">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          </button>
-          <button class="btn-icon danger" title="Delete" onclick="openDeleteProduct(${p.id}, '${escAttr(p.name)}')">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          </button>
-        </div>
+        ${rowActions(p)}
       </td>
     </tr>`
     )
@@ -1343,6 +1370,7 @@ function populateProductSelects() {
 
   ["restock-product", "adjust-product"].forEach((id) => {
     const sel = document.getElementById(id);
+    if (!sel) return;
     sel.innerHTML =
       '<option value="">Choose a product...</option>' +
       stockProducts
@@ -3945,7 +3973,8 @@ function populateAttendanceUserFilter(users) {
 }
 
 async function loadAttendance() {
-  if (!state.currentUser || state.currentUser.role !== "admin") return;
+  const role = state.currentUser?.role;
+  if (!state.currentUser || (role !== "admin" && role !== "supervisor")) return;
 
   const fromEl = document.getElementById("attendance-from");
   const toEl = document.getElementById("attendance-to");
@@ -4399,9 +4428,9 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(openAddProduct, 150);
   });
 
-  document.getElementById("btn-add-product").addEventListener("click", openAddProduct);
-  document.getElementById("product-form").addEventListener("submit", saveProduct);
-  document.getElementById("confirm-delete").addEventListener("click", confirmDelete);
+  document.getElementById("btn-add-product")?.addEventListener("click", openAddProduct);
+  document.getElementById("product-form")?.addEventListener("submit", saveProduct);
+  document.getElementById("confirm-delete")?.addEventListener("click", confirmDelete);
 
   const debouncedLoadProducts = debounce(loadProducts, 300);
   document.getElementById("product-search").addEventListener("input", () => {
@@ -4477,8 +4506,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.getElementById("btn-print-invoice")?.addEventListener("click", printInvoice);
 
-  document.getElementById("restock-form").addEventListener("submit", submitRestock);
-  document.getElementById("adjust-form").addEventListener("submit", submitAdjust);
+  document.getElementById("restock-form")?.addEventListener("submit", submitRestock);
+  document.getElementById("adjust-form")?.addEventListener("submit", submitAdjust);
 
   document.getElementById("history-type-filter").addEventListener("change", loadHistory);
   document.getElementById("history-seller-filter")?.addEventListener("change", loadHistory);
