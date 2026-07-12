@@ -262,7 +262,7 @@ def report_recipients(db):
              AND email IS NOT NULL
              AND TRIM(email) != ''"""
     ).fetchall()
-    admin_roles = {"admin", "stock_manager"}
+    admin_roles = {"admin", "supervisor", "stock_manager"}
     admins = []
     sellers = []
     for row in rows:
