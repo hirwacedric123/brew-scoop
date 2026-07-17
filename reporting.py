@@ -717,7 +717,7 @@ def render_shift_close_html(shift, seller_name):
 
     notes = shift.get("cash_notes") or {}
     denom_rows = []
-    for denom in ("5000", "2000", "1000", "500", "100"):
+    for denom in ("5000", "2000", "1000", "500", "100", "50"):
         qty = notes.get(denom) or notes.get(int(denom)) or 0
         if qty:
             denom_rows.append(
