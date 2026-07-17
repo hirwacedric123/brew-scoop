@@ -276,6 +276,7 @@ def _migrate_db(db):
         "cash_notes_1000",
         "cash_notes_500",
         "cash_notes_100",
+        "cash_notes_50",
     ):
         if col not in shift_cols:
             db.execute(
@@ -911,6 +912,31 @@ def auth_heartbeat():
 def auth_me():
     user = get_current_user(get_db())
     return jsonify({"user": public_user(user)})
+
+
+@app.route("/api/auth/profile", methods=["PUT"])
+@login_required
+def auth_update_profile():
+    db = get_db()
+    user = get_current_user(db)
+    data = request.get_json(silent=True) or {}
+
+    display_name = (data.get("display_name") or "").strip()
+    if not display_name:
+        return jsonify({"error": "Display name cannot be empty"}), 400
+
+    email_error = validate_email(data.get("email"))
+    if email_error:
+        return jsonify({"error": email_error}), 400
+    email = normalize_email(data.get("email"))
+
+    db.execute(
+        "UPDATE users SET display_name=?, email=?, updated_at=? WHERE id=?",
+        (display_name, email, now_iso(), user["id"]),
+    )
+    db.commit()
+    updated = get_user_by_id(db, user["id"])
+    return jsonify({"message": "Profile updated", "user": public_user(updated)})
 
 
 # ── Admin API ──────────────────────────────────────────────────────────────
@@ -1669,7 +1695,7 @@ def get_open_seller_shift(db, user_id):
     ).fetchone()
 
 
-CASH_DENOMINATIONS = (5000, 2000, 1000, 500, 100)
+CASH_DENOMINATIONS = (5000, 2000, 1000, 500, 100, 50)
 
 
 def _parse_cash_notes(data):
@@ -1682,7 +1708,7 @@ def _parse_cash_notes(data):
         try:
             count = int(notes.get(key, 0))
         except (TypeError, ValueError):
-            return None, f"Invalid count for {denom:,} RWF notes"
+            return None, f"Invalid count for {denom:,} RWF"
         if count < 0:
             return None, "Note counts cannot be negative"
         result[denom] = count
@@ -1700,6 +1726,7 @@ def _cash_notes_from_row(row):
         "1000": row["cash_notes_1000"] or 0,
         "500": row["cash_notes_500"] or 0,
         "100": row["cash_notes_100"] or 0,
+        "50": (row["cash_notes_50"] if "cash_notes_50" in row.keys() else 0) or 0,
     }
 
 
@@ -2019,6 +2046,7 @@ def seller_shift_close():
            cash_notes_1000 = ?,
            cash_notes_500 = ?,
            cash_notes_100 = ?,
+           cash_notes_50 = ?,
            concerns = ?,
            report_low_stock = ?,
            report_issues = ?,
@@ -2046,6 +2074,7 @@ def seller_shift_close():
             cash_notes[1000],
             cash_notes[500],
             cash_notes[100],
+            cash_notes[50],
             concerns,
             report_low_stock,
             report_issues,
