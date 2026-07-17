@@ -32,6 +32,7 @@
 @import url("pages/history.css");
 @import url("pages/sales.css");
 @import url("pages/admin.css");
+@import url("pages/profile.css");
 
 /* Responsive overrides */
 @import url("layout/responsive.css");
