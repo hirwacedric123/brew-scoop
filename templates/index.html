@@ -78,13 +78,13 @@
 
       <div class="sidebar-footer">
         <div class="user-panel" id="user-panel">
-          <div class="user-info">
+          <button type="button" class="user-info" id="btn-open-profile" title="View your profile">
             <div class="user-avatar" id="user-avatar">{{ current_user.display_name[0]|upper }}</div>
             <div class="user-meta">
               <strong id="user-display-name">{{ current_user.display_name }}</strong>
               <span id="user-role-label">{{ current_user.role|replace('_', ' ')|title }}</span>
             </div>
-          </div>
+          </button>
           <button type="button" class="btn btn-ghost btn-sm btn-logout" id="btn-logout" title="Sign out">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
@@ -320,7 +320,7 @@
             <strong>Shift not started</strong>
             <p>Start your shift before you can sell.</p>
           </div>
-          <button type="button" class="btn btn-primary btn-sm" data-view="reconcile">Start Shift</button>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-sell-start-shift">Start Shift</button>
         </div>
 
         <div class="sell-layout" id="sell-layout">
@@ -493,7 +493,7 @@
 
           <div class="shift-sell-hint card" id="shift-sell-hint" hidden>
             <p>Record sales on the Sell screen. Totals stay hidden until you close your shift.</p>
-            <button type="button" class="btn btn-ghost shift-link-cta" id="btn-show-close">
+            <button type="button" class="btn btn-primary shift-link-cta shift-link-cta-primary" id="btn-show-close">
               Done selling? Close shift
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
             </button>
@@ -529,18 +529,14 @@
                 </div>
                 <div>
                   <h3>Close shift</h3>
-                  <p>Enter what you collected for each payment method. Recorded sales stay hidden until after you submit.</p>
+                  <p>Count cash notes, then enter MoMo and Visa totals.</p>
                 </div>
               </div>
-              <div class="shift-tip" id="shift-close-tip">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                <p>Count your cash notes and enter the MoMo and Visa totals you received. We compare each amount to recorded sales only after you close.</p>
-              </div>
-              <form id="shift-close-form" class="shift-form">
+              <form id="shift-close-form" class="shift-form shift-form-close">
                 <div class="cash-notes-form">
                   <div class="cash-notes-head">
-                    <label>Cash notes in hand</label>
-                    <p class="shift-field-hint">Rwandan franc notes — enter the quantity of each denomination.</p>
+                    <label>Cash in hand</label>
+                    <p class="shift-field-hint">Enter how many notes and coins of each denomination you have.</p>
                   </div>
                   <div class="cash-notes-rows">
                     <div class="cash-note-row">
@@ -578,6 +574,13 @@
                       <span class="cash-note-equals">=</span>
                       <span class="cash-note-sub" id="cash-note-sub-100">RWF 0</span>
                     </div>
+                    <div class="cash-note-row">
+                      <span class="cash-note-label">50</span>
+                      <span class="cash-note-times">×</span>
+                      <input type="number" class="cash-note-input" id="cash-note-50" min="0" step="1" placeholder="0" inputmode="numeric" data-denom="50">
+                      <span class="cash-note-equals">=</span>
+                      <span class="cash-note-sub" id="cash-note-sub-50">RWF 0</span>
+                    </div>
                   </div>
                   <div class="cash-notes-total-row">
                     <span>Cash total</span>
@@ -604,11 +607,12 @@
                   </div>
                 </div>
 
-                <div class="shift-report-form">
-                  <div class="payment-count-head">
-                    <label>End-of-shift report for admin <span class="shift-field-optional">(optional)</span></label>
-                    <p class="shift-field-hint">Fill in anything the admin should know from this shift.</p>
-                  </div>
+                <details class="shift-report-form">
+                  <summary class="shift-report-summary">
+                    <span>End-of-shift report <span class="shift-field-optional">(optional)</span></span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                  </summary>
+                  <p class="shift-field-hint">Anything the admin should know from this shift.</p>
                   <div class="shift-report-fields">
                     <div class="shift-report-field">
                       <label for="shift-report-low-stock">Low stock / items to restock</label>
@@ -627,20 +631,28 @@
                       <textarea id="shift-concerns" class="shift-report-input" rows="2" maxlength="2000" placeholder="Any other notes for the admin."></textarea>
                     </div>
                   </div>
-                </div>
+                </details>
 
-                <button type="submit" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-close" id="btn-reconcile">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                  Close &amp; reconcile
-                </button>
+                <div class="shift-close-dock">
+                  <div class="shift-close-dock-inner">
+                    <div class="shift-close-dock-meta">
+                      <span>Cash counted</span>
+                      <strong id="cash-notes-total-dock">RWF 0</strong>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg shift-cta shift-cta-close" id="btn-reconcile">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      Close &amp; reconcile
+                    </button>
+                  </div>
+                </div>
               </form>
             </div>
 
             <div class="shift-panel shift-panel-result card" id="shift-result-card" hidden>
               <button type="button" class="btn btn-primary btn-lg btn-block shift-cta shift-cta-start" id="btn-new-shift">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                Start new shift
-              </button>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Start new shift
+                </button>
               <div id="reconcile-result"></div>
             </div>
           </div>
@@ -1231,6 +1243,145 @@
         </div>
       </section>
       {% endif %}
+
+      <!-- Profile -->
+      <section id="view-profile" class="view">
+        <header class="topbar profile-topbar">
+          <div class="topbar-heading">
+            <div>
+              <p class="page-eyebrow page-eyebrow-caramel">Account</p>
+              <h2>My Profile</h2>
+              <p class="profile-subtitle">Update how you appear and keep your account secure</p>
+            </div>
+          </div>
+        </header>
+
+        <div class="profile-page">
+          <div class="profile-hero" id="profile-hero">
+            <div class="profile-hero-pattern" aria-hidden="true"></div>
+            <div class="profile-hero-glow" aria-hidden="true"></div>
+            <div class="profile-hero-avatar" id="profile-hero-avatar" aria-hidden="true">
+              {{ current_user.display_name[0]|upper }}
+            </div>
+            <div class="profile-hero-body">
+              <h3 class="profile-hero-name" id="profile-hero-name">{{ current_user.display_name }}</h3>
+              <div class="profile-hero-meta">
+                <span class="profile-pill" id="profile-hero-role">{{ current_user.role|replace('_', ' ')|title }}</span>
+                <span class="profile-pill profile-pill-muted">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <span id="profile-hero-username">@{{ current_user.username }}</span>
+                </span>
+                <span class="profile-pill profile-pill-muted" id="profile-hero-email-pill"{% if not current_user.email %} hidden{% endif %}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  <span id="profile-hero-email">{{ current_user.email or '' }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="profile-layout">
+            <div class="card profile-card profile-card-details">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <span class="card-title-icon card-title-icon-caramel">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  </span>
+                  <div>
+                    <h3>Profile details</h3>
+                    <p class="profile-card-desc">Your name and contact email</p>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body">
+                <form id="profile-form" class="profile-form">
+                  <div class="profile-meta-row" aria-label="Account info">
+                    <div class="profile-meta-item">
+                      <span class="profile-meta-label">Username</span>
+                      <strong id="profile-username-label">@{{ current_user.username }}</strong>
+                    </div>
+                    <div class="profile-meta-item">
+                      <span class="profile-meta-label">Role</span>
+                      <strong id="profile-role-label-field">{{ current_user.role|replace('_', ' ')|title }}</strong>
+                    </div>
+                  </div>
+                  <p class="form-hint profile-meta-hint">Username and role can only be changed by an administrator.</p>
+
+                  <div class="form-group">
+                    <label for="profile-display-name">Display name</label>
+                    <div class="profile-input-wrap">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                      <input type="text" id="profile-display-name" required placeholder="e.g. Jean Pierre" autocomplete="name">
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-email">Email</label>
+                    <div class="profile-input-wrap">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                      <input type="email" id="profile-email" placeholder="you@example.com" autocomplete="email">
+                    </div>
+                    <p class="form-hint">Used for daily reports and password reset emails.</p>
+                  </div>
+                  <div class="profile-form-actions">
+                    <button type="submit" class="btn btn-primary" id="btn-save-profile">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                      Save changes
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <div class="card profile-card profile-card-security">
+              <div class="card-header">
+                <div class="card-title-group">
+                  <span class="card-title-icon card-title-icon-coffee">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  </span>
+                  <div>
+                    <h3>Security</h3>
+                    <p class="profile-card-desc">Change your sign-in password</p>
+                  </div>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="profile-security-tip">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                  <p>Use at least 6 characters. Pick something you don’t use elsewhere.</p>
+                </div>
+                <form id="profile-password-form" class="profile-form">
+                  <div class="form-group">
+                    <label for="profile-current-password">Current password</label>
+                    <div class="profile-input-wrap">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      <input type="password" id="profile-current-password" autocomplete="current-password" required placeholder="Your current password">
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-new-password">New password</label>
+                    <div class="profile-input-wrap">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      <input type="password" id="profile-new-password" autocomplete="new-password" minlength="6" required placeholder="At least 6 characters">
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label for="profile-confirm-password">Confirm new password</label>
+                    <div class="profile-input-wrap">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                      <input type="password" id="profile-confirm-password" autocomplete="new-password" minlength="6" required placeholder="Repeat new password">
+                    </div>
+                  </div>
+                  <div class="profile-form-actions">
+                    <button type="submit" class="btn btn-primary" id="btn-update-password">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      Update password
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <nav class="bottom-nav" id="bottom-nav" aria-label="Mobile navigation">
@@ -1439,6 +1590,23 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
           <button type="button" class="btn btn-primary" id="confirm-delete" style="background: var(--danger);">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="logout-shift-modal" hidden>
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Shift still open</h3>
+        <button class="modal-close" type="button" data-close-modal>&times;</button>
+      </div>
+      <div style="padding: 0 1.5rem 1.5rem;">
+        <p>You still have an open shift. Close it so cash, MoMo, and Visa can be reconciled — or log out anyway if you will come back.</p>
+        <div class="modal-actions modal-actions-stack">
+          <button type="button" class="btn btn-primary" id="logout-go-close-shift">Close shift</button>
+          <button type="button" class="btn btn-ghost" id="logout-anyway">Log out anyway</button>
+          <button type="button" class="btn btn-ghost" data-close-modal>Cancel</button>
         </div>
       </div>
     </div>
