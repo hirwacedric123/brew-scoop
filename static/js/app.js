@@ -50,6 +50,7 @@ const VIEW_TITLES = {
   sales: "Sales Reports",
   admin: "Administration",
   reconcile: "My Shift",
+  profile: "My Profile",
 };
 
 /* ── UI State Persistence ────────────────────────────────────────────────── */
@@ -144,6 +145,7 @@ function canViewShiftReports() {
 
 function canAccessView(viewId) {
   const role = state.currentUser?.role;
+  if (viewId === "profile") return true;
   if ((role === "admin" || role === "supervisor") && (viewId === "sell" || viewId === "reconcile")) {
     return false;
   }
@@ -444,6 +446,7 @@ function switchView(viewId) {
   }
   if (viewId === "admin") loadAdminView();
   if (viewId === "reconcile") loadReconcileView();
+  if (viewId === "profile") loadProfileView();
 
   saveUIState();
 }
@@ -2176,8 +2179,9 @@ const SHIFT_HERO_ICONS = {
 
 let shiftTimerInterval = null;
 let shiftUiPhase = "sell"; // "sell" | "close" while shift is open
+let pendingShiftUiPhase = null; // set before switchView("reconcile") to open on close form
 
-const CASH_DENOMS = [5000, 2000, 1000, 500, 100];
+const CASH_DENOMS = [5000, 2000, 1000, 500, 100, 50];
 
 function readCashNotesFromForm() {
   const notes = {};
@@ -2199,6 +2203,8 @@ function updateCashNotesTotal() {
   }
   const totalEl = document.getElementById("cash-notes-total");
   if (totalEl) totalEl.textContent = fmt.format(total);
+  const dockEl = document.getElementById("cash-notes-total-dock");
+  if (dockEl) dockEl.textContent = fmt.format(total);
 }
 
 function clearCashNoteInputs() {
@@ -2310,6 +2316,7 @@ function renderShiftOpenPhase() {
   const heroActions = document.getElementById("shift-hero-actions");
   const panels = document.getElementById("shift-panels");
   const subtitle = document.getElementById("reconcile-subtitle");
+  const view = document.getElementById("view-reconcile");
   const closing = shiftUiPhase === "close";
 
   if (sellHint) sellHint.hidden = closing;
@@ -2319,9 +2326,10 @@ function renderShiftOpenPhase() {
     panels.classList.remove("is-idle", "is-active", "is-closed", "is-selling", "is-closing");
     panels.classList.add(closing ? "is-closing" : "is-selling");
   }
+  if (view) view.classList.toggle("is-closing-shift", closing);
   if (subtitle) {
     subtitle.textContent = closing
-      ? "Enter what you collected for each payment method — recorded sales stay hidden until you submit."
+      ? "Enter cash, MoMo, and Visa totals — then tap Close & reconcile."
       : "Sell during your shift, then reconcile cash, MoMo, and Visa to close.";
   }
   updateShiftSteps(closing ? "close" : "sell");
@@ -2595,6 +2603,7 @@ function renderShiftView() {
   const resultCard = document.getElementById("shift-result-card");
   const sellHint = document.getElementById("shift-sell-hint");
   const heroActions = document.getElementById("shift-hero-actions");
+  const view = document.getElementById("view-reconcile");
 
   const data = state.sellerShift;
   const open = data?.has_open_shift;
@@ -2605,6 +2614,7 @@ function renderShiftView() {
   if (sellHint) sellHint.hidden = true;
   if (closeCard) closeCard.hidden = true;
   if (heroActions) heroActions.hidden = true;
+  if (view && !open) view.classList.remove("is-closing-shift");
 
   if (open && data.shift) {
     const startedAt = formatDate(data.shift.opened_at);
@@ -2640,22 +2650,34 @@ async function loadReconcileView() {
   if (!isSeller()) return;
 
   updateShiftDateBadge();
-  shiftUiPhase = "sell";
+  shiftUiPhase = pendingShiftUiPhase === "close" ? "close" : "sell";
+  pendingShiftUiPhase = null;
 
   try {
     await refreshSellerShift();
     renderShiftView();
+    if (shiftUiPhase === "close") {
+      document.getElementById("cash-note-5000")?.focus();
+    }
   } catch (err) {
     toast(err.message, "error");
   }
 }
 
-async function submitStartShift(e) {
-  e.preventDefault();
-  if (!isSeller()) return;
+async function startSellerShift({ button, goToSell = false } = {}) {
+  if (!isSeller()) return false;
 
-  const btn = document.getElementById("btn-start-shift");
-  btn.disabled = true;
+  const buttons = [
+    button,
+    document.getElementById("btn-start-shift"),
+    document.getElementById("btn-new-shift"),
+    document.getElementById("btn-sell-start-shift"),
+  ].filter(Boolean);
+  const uniqueButtons = [...new Set(buttons)];
+  uniqueButtons.forEach((btn) => {
+    btn.disabled = true;
+  });
+
   try {
     const data = await api("/api/seller/shift/start", {
       method: "POST",
@@ -2663,14 +2685,41 @@ async function submitStartShift(e) {
     });
     state.sellerShift = data;
     shiftUiPhase = "sell";
-    toast(data.message || "Shift started");
+    toast(data.message || "Shift started — you can sell now");
     renderShiftView();
     updateSellShiftUi();
+    if (goToSell) switchView("sell");
+    return true;
   } catch (err) {
     toast(err.message, "error");
+    return false;
   } finally {
-    btn.disabled = false;
+    uniqueButtons.forEach((btn) => {
+      btn.disabled = false;
+    });
   }
+}
+
+async function submitStartShift(e) {
+  e.preventDefault();
+  await startSellerShift({
+    button: document.getElementById("btn-start-shift"),
+    goToSell: true,
+  });
+}
+
+async function startNewShiftFromResult() {
+  await startSellerShift({
+    button: document.getElementById("btn-new-shift"),
+    goToSell: true,
+  });
+}
+
+async function startShiftFromSell() {
+  await startSellerShift({
+    button: document.getElementById("btn-sell-start-shift"),
+    goToSell: false,
+  });
 }
 
 async function submitCloseShift(e) {
@@ -2722,15 +2771,6 @@ async function submitCloseShift(e) {
   } finally {
     btn.disabled = false;
   }
-}
-
-function showStartShiftForm() {
-  state.sellerShift = { has_open_shift: false };
-  shiftUiPhase = "sell";
-  const resultCard = document.getElementById("shift-result-card");
-  if (resultCard) resultCard.hidden = true;
-  renderShiftView();
-  document.getElementById("btn-start-shift")?.focus();
 }
 
 function initCashNoteInputs() {
@@ -4292,13 +4332,141 @@ async function confirmDeleteCategory() {
   }
 }
 
-async function logout() {
+async function performLogout() {
   try {
     await api("/api/auth/logout", { method: "POST" });
   } catch {
     // redirect regardless
   }
   window.location.href = "/login";
+}
+
+async function logout() {
+  if (isSeller()) {
+    try {
+      await refreshSellerShift();
+    } catch {
+      // If status check fails, still allow logout without blocking.
+    }
+    if (hasOpenShift()) {
+      showModal("logout-shift-modal");
+      return;
+    }
+  }
+  await performLogout();
+}
+
+async function goCloseShiftFromLogout() {
+  hideModal("logout-shift-modal");
+  pendingShiftUiPhase = "close";
+  switchView("reconcile");
+}
+
+// ── Profile ────────────────────────────────────────────────────────────────
+
+function syncProfileHero(user) {
+  if (!user) return;
+  const initial = (user.display_name || "?").charAt(0).toUpperCase();
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val || "";
+  };
+
+  setText("profile-hero-avatar", initial);
+  setText("profile-hero-name", user.display_name);
+  setText("profile-hero-role", ROLE_LABELS[user.role] || user.role);
+  setText("profile-hero-username", `@${user.username || ""}`);
+  setText("profile-username-label", `@${user.username || ""}`);
+  setText("profile-role-label-field", ROLE_LABELS[user.role] || user.role);
+
+  const email = (user.email || "").trim();
+  setText("profile-hero-email", email);
+  const emailPill = document.getElementById("profile-hero-email-pill");
+  if (emailPill) emailPill.hidden = !email;
+}
+
+function loadProfileView() {
+  const user = state.currentUser;
+  if (!user) return;
+
+  const nameInput = document.getElementById("profile-display-name");
+  const emailInput = document.getElementById("profile-email");
+  if (nameInput) nameInput.value = user.display_name || "";
+  if (emailInput) emailInput.value = user.email || "";
+
+  syncProfileHero(user);
+  document.getElementById("profile-password-form")?.reset();
+}
+
+function updateUserPanel() {
+  const user = state.currentUser;
+  if (!user) return;
+  const nameEl = document.getElementById("user-display-name");
+  if (nameEl) nameEl.textContent = user.display_name || "";
+  const avatarEl = document.getElementById("user-avatar");
+  if (avatarEl) avatarEl.textContent = (user.display_name || "?").charAt(0).toUpperCase();
+  syncProfileHero(user);
+}
+
+function previewProfileName() {
+  const name = document.getElementById("profile-display-name")?.value.trim() || "";
+  const heroName = document.getElementById("profile-hero-name");
+  const heroAvatar = document.getElementById("profile-hero-avatar");
+  if (heroName) heroName.textContent = name || state.currentUser?.display_name || "";
+  if (heroAvatar) {
+    heroAvatar.textContent = (name || state.currentUser?.display_name || "?").charAt(0).toUpperCase();
+  }
+}
+
+async function saveProfile(e) {
+  e.preventDefault();
+  const btn = document.getElementById("btn-save-profile");
+  const payload = {
+    display_name: document.getElementById("profile-display-name").value.trim(),
+    email: document.getElementById("profile-email").value.trim(),
+  };
+  if (btn) btn.disabled = true;
+  try {
+    const data = await api("/api/auth/profile", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    state.currentUser = { ...state.currentUser, ...data.user };
+    updateUserPanel();
+    toast("Profile updated");
+  } catch (err) {
+    toast(err.message, "error");
+    syncProfileHero(state.currentUser);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function changePasswordFromProfile(e) {
+  e.preventDefault();
+  const current = document.getElementById("profile-current-password").value;
+  const next = document.getElementById("profile-new-password").value;
+  const confirm = document.getElementById("profile-confirm-password").value;
+
+  if (next !== confirm) {
+    toast("New passwords do not match", "error");
+    return;
+  }
+
+  const btn = document.getElementById("btn-update-password");
+  if (btn) btn.disabled = true;
+  try {
+    await api("/api/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: current, new_password: next }),
+    });
+    document.getElementById("profile-password-form")?.reset();
+    toast("Password updated");
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function formatDateLabel(isoDate) {
@@ -4484,7 +4652,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-clear-cart").addEventListener("click", clearCart);
   document.getElementById("shift-start-form")?.addEventListener("submit", submitStartShift);
   document.getElementById("shift-close-form")?.addEventListener("submit", submitCloseShift);
-  document.getElementById("btn-new-shift")?.addEventListener("click", showStartShiftForm);
+  document.getElementById("btn-new-shift")?.addEventListener("click", () => {
+    startNewShiftFromResult().catch((err) => toast(err.message, "error"));
+  });
+  document.getElementById("btn-sell-start-shift")?.addEventListener("click", () => {
+    startShiftFromSell().catch((err) => toast(err.message, "error"));
+  });
   document.getElementById("btn-show-close")?.addEventListener("click", async () => {
     try {
       await refreshSellerShift();
@@ -4529,6 +4702,15 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btn-logout")?.addEventListener("click", logout);
+  document.getElementById("logout-go-close-shift")?.addEventListener("click", goCloseShiftFromLogout);
+  document.getElementById("logout-anyway")?.addEventListener("click", () => {
+    hideModal("logout-shift-modal");
+    performLogout();
+  });
+  document.getElementById("btn-open-profile")?.addEventListener("click", () => switchView("profile"));
+  document.getElementById("profile-form")?.addEventListener("submit", saveProfile);
+  document.getElementById("profile-password-form")?.addEventListener("submit", changePasswordFromProfile);
+  document.getElementById("profile-display-name")?.addEventListener("input", previewProfileName);
   document.getElementById("btn-add-user")?.addEventListener("click", openAddUser);
   document.getElementById("user-form")?.addEventListener("submit", saveUser);
   document.getElementById("confirm-delete-user")?.addEventListener("click", confirmDeleteUser);
