@@ -4092,16 +4092,29 @@ function printOrderFromCart() {
   showInvoice(invoiceFromCart());
 }
 
+/** Convert CSS colors (including color(srgb …)) to #rrggbb for PDF/canvas. */
+function normalizeCssColor(value, fallback = "#012100") {
+  if (!value) return fallback;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return fallback;
+  ctx.fillStyle = fallback;
+  ctx.fillStyle = value;
+  const out = ctx.fillStyle;
+  return out || fallback;
+}
+
 function invoiceBrandColors() {
   return {
-    primary: brandColor("--espresso"),
-    accent: brandColor("--caramel"),
-    foam: brandColor("--foam"),
-    cream: brandColor("--cream"),
-    coffee: brandColor("--coffee"),
-    muted: brandColor("--text-muted"),
-    border: brandColor("--border"),
-    subtle: brandColor("--text-subtle"),
+    primary: normalizeCssColor(brandColor("--espresso"), "#012100"),
+    accent: normalizeCssColor(brandColor("--caramel"), "#b07a4a"),
+    foam: normalizeCssColor(brandColor("--foam"), "#fffaf2"),
+    cream: normalizeCssColor(brandColor("--cream"), "#f5efe4"),
+    coffee: normalizeCssColor(brandColor("--coffee"), "#4a2f1c"),
+    muted: normalizeCssColor(brandColor("--text-muted"), "#6b635a"),
+    border: normalizeCssColor(brandColor("--border"), "#d0d5c6"),
+    subtle: normalizeCssColor(brandColor("--text-subtle"), "#9a9288"),
   };
 }
 
@@ -4295,9 +4308,26 @@ function cloneInvoicePrintArea() {
   const logo = clone.querySelector(".invoice-logo");
   if (logo) {
     logo.setAttribute("src", new URL(logoSrc, window.location.origin).href);
-    logo.crossOrigin = "anonymous";
   }
   return clone;
+}
+
+async function imageToDataUrl(src) {
+  if (!src) return null;
+  if (src.startsWith("data:")) return src;
+  try {
+    const res = await fetch(src, { credentials: "same-origin" });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
 }
 
 function invoiceDownloadFilename(ext = "pdf") {
@@ -4344,12 +4374,17 @@ function loadScriptOnce(src) {
 
 async function ensureHtml2Pdf() {
   if (window.html2pdf) return window.html2pdf;
-  await loadScriptOnce("https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js");
+  const localSrc = "/static/vendor/html2pdf.bundle.min.js";
+  try {
+    await loadScriptOnce(localSrc);
+  } catch {
+    await loadScriptOnce("https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js");
+  }
   if (!window.html2pdf) throw new Error("PDF library unavailable");
   return window.html2pdf;
 }
 
-function downloadInvoiceHtml() {
+function downloadInvoiceHtml(reason) {
   const clone = cloneInvoicePrintArea();
   if (!clone) return;
   const colors = invoiceBrandColors();
@@ -4371,8 +4406,12 @@ function downloadInvoiceHtml() {
 </html>`;
   triggerBlobDownload(new Blob([html], { type: "text/html;charset=utf-8" }), invoiceDownloadFilename("html"));
   toast(
-    state.currentInvoice?.is_pending ? "Order saved to downloads" : "Invoice saved to downloads",
-    "success"
+    reason
+      ? `PDF failed (${reason}). Saved as HTML instead.`
+      : state.currentInvoice?.is_pending
+        ? "Order saved to downloads"
+        : "Invoice saved to downloads",
+    reason ? "error" : "success"
   );
 }
 
@@ -4386,36 +4425,53 @@ async function downloadInvoice() {
   const existing = document.getElementById("invoice-download-root");
   if (existing) existing.remove();
 
+  const logo = clone.querySelector(".invoice-logo");
+  if (logo) {
+    const dataUrl = await imageToDataUrl(logo.getAttribute("src"));
+    if (dataUrl) logo.setAttribute("src", dataUrl);
+  }
+
   const colors = invoiceBrandColors();
   const root = document.createElement("div");
   root.id = "invoice-download-root";
-  root.style.cssText = "position:fixed;left:-10000px;top:0;width:118mm;background:#fff;z-index:-1;";
+  // Keep in-viewport (tiny opacity) so html2canvas can measure layout reliably.
+  root.style.cssText =
+    "position:fixed;left:0;top:0;width:420px;background:#fff;opacity:0.01;pointer-events:none;z-index:0;";
   root.innerHTML = `<style>${invoiceReceiptCss("#invoice-download-root", colors)}</style>`;
   root.appendChild(clone);
   document.body.appendChild(root);
 
   try {
     const html2pdf = await ensureHtml2Pdf();
-    const logo = root.querySelector(".invoice-logo");
-    if (logo && !logo.complete) {
+    const exportLogo = root.querySelector(".invoice-logo");
+    if (exportLogo && !exportLogo.complete) {
       await new Promise((resolve) => {
-        logo.onload = resolve;
-        logo.onerror = resolve;
+        exportLogo.onload = resolve;
+        exportLogo.onerror = resolve;
       });
     }
+    // Export the invoice card itself, not the wrapper+style tag.
+    const target = root.querySelector(".invoice") || root;
     await html2pdf()
       .set({
         margin: [8, 8, 8, 8],
         filename: invoiceDownloadFilename("pdf"),
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+        },
         jsPDF: { unit: "mm", format: "a5", orientation: "portrait" },
       })
-      .from(root)
+      .from(target)
       .save();
-    toast("Saved to downloads", "success");
+    toast("PDF saved to downloads", "success");
   } catch (err) {
-    downloadInvoiceHtml();
+    const reason = err?.message ? String(err.message).slice(0, 80) : "unknown error";
+    downloadInvoiceHtml(reason);
   } finally {
     root.remove();
     if (btn) btn.disabled = false;
