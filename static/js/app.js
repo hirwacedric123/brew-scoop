@@ -76,6 +76,7 @@ const state = {
   deleteCategoryId: null,
   voidCheckoutRef: null,
   historySaleGroups: null,
+  currentInvoice: null,
   currentUser: window.CURRENT_USER || null,
   currentBusiness: window.CURRENT_BUSINESS || null,
   memberships: window.MEMBERSHIPS || [],
@@ -3965,7 +3966,10 @@ function showInvoice(invoice) {
   const docLabel = document.getElementById("invoice-doc-label");
   const footer = document.getElementById("invoice-footer");
   const printLabel = document.getElementById("btn-print-invoice-label");
+  const downloadLabel = document.getElementById("btn-download-invoice-label");
   if (!meta || !lines || !totals) return;
+
+  state.currentInvoice = invoice;
 
   const isPending = !!invoice.is_pending;
   const seller = invoice.seller_name || "—";
@@ -3986,6 +3990,7 @@ function showInvoice(invoice) {
       : "Thank you for your purchase";
   }
   if (printLabel) printLabel.textContent = isPending ? "Print Order" : "Print Invoice";
+  if (downloadLabel) downloadLabel.textContent = isPending ? "Download Order" : "Download Invoice";
 
   meta.innerHTML = `
     <div>
@@ -4087,29 +4092,344 @@ function printOrderFromCart() {
   showInvoice(invoiceFromCart());
 }
 
-function printInvoice() {
+function invoiceBrandColors() {
+  return {
+    primary: brandColor("--espresso"),
+    accent: brandColor("--caramel"),
+    foam: brandColor("--foam"),
+    cream: brandColor("--cream"),
+    coffee: brandColor("--coffee"),
+    muted: brandColor("--text-muted"),
+    border: brandColor("--border"),
+    subtle: brandColor("--text-subtle"),
+  };
+}
+
+function invoiceReceiptCss(sel, c) {
+  return `
+    ${sel} {
+      width: 100%;
+      max-width: 118mm;
+      margin: 0 auto;
+      color: ${c.primary};
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-size: 10pt;
+      line-height: 1.35;
+      background: #fff;
+    }
+    ${sel} .invoice {
+      border: 1px solid ${c.border};
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fff;
+    }
+    ${sel} .invoice-brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 6px;
+      margin: 0;
+      padding: 12px 12px 10px;
+      background: ${c.foam};
+      border-bottom: 1px solid ${c.border};
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    ${sel} .invoice-logo {
+      width: 72px;
+      height: auto;
+      max-height: 56px;
+      object-fit: contain;
+      display: block;
+    }
+    ${sel} .invoice-brand-text h2 {
+      margin: 0;
+      font-family: Fraunces, Georgia, serif;
+      font-size: 13pt;
+      font-weight: 600;
+      color: ${c.primary};
+    }
+    ${sel} .invoice-brand-text p {
+      margin: 2px 0 0;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: ${c.muted};
+      font-weight: 600;
+    }
+    ${sel} .invoice-body { padding: 10px 12px 12px; }
+    ${sel} .invoice-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 10px;
+      margin: 0 0 10px;
+      padding: 7px 8px;
+      background: ${c.foam};
+      border: 1px solid ${c.border};
+      border-radius: 4px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    ${sel} .invoice-meta dt {
+      margin: 0;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: ${c.muted};
+      font-weight: 600;
+    }
+    ${sel} .invoice-meta dd {
+      margin: 1px 0 0;
+      font-size: 9pt;
+      font-weight: 600;
+      word-break: break-word;
+    }
+    ${sel} .invoice-voided-banner {
+      margin: 0 0 8px;
+      padding: 4px 6px;
+      border: 1px solid #c45c4a;
+      color: #c45c4a;
+      font-size: 8.5pt;
+      font-weight: 600;
+      text-align: center;
+      border-radius: 4px;
+    }
+    ${sel} .invoice-pending-banner {
+      margin: 0 0 8px;
+      padding: 4px 6px;
+      border: 1px dashed ${c.accent};
+      color: ${c.coffee};
+      background: ${c.cream};
+      font-size: 8.5pt;
+      font-weight: 600;
+      text-align: center;
+      border-radius: 4px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    ${sel} .invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 10px;
+      font-size: 9pt;
+    }
+    ${sel} .invoice-table th {
+      text-align: left;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: ${c.muted};
+      padding: 3px 2px;
+      border-bottom: 1.5px solid ${c.border};
+    }
+    ${sel} .invoice-table td {
+      padding: 5px 2px;
+      border-bottom: 1px solid ${c.cream};
+      vertical-align: top;
+    }
+    ${sel} .invoice-table tbody tr:last-child td { border-bottom: none; }
+    ${sel} .invoice-table .num {
+      text-align: right;
+      white-space: nowrap;
+    }
+    ${sel} .item-name { font-weight: 600; }
+    ${sel} .item-cat {
+      display: block;
+      font-size: 7.5pt;
+      font-weight: 500;
+      color: ${c.muted};
+    }
+    ${sel} .invoice-totals {
+      background: ${c.cream};
+      border: 1px solid ${c.border};
+      border-radius: 4px;
+      padding: 7px 9px;
+      margin: 0 0 8px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    ${sel} .invoice-totals-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 9pt;
+      padding: 1px 0;
+      color: ${c.coffee};
+    }
+    ${sel} .invoice-totals-row.grand {
+      margin-top: 4px;
+      padding-top: 5px;
+      border-top: 1.5px solid ${c.accent};
+      font-family: Fraunces, Georgia, serif;
+      font-size: 12pt;
+      font-weight: 600;
+      color: ${c.primary};
+    }
+    ${sel} .invoice-notes {
+      margin: 0 0 8px;
+      padding: 5px 7px;
+      border-left: 3px solid ${c.accent};
+      background: ${c.foam};
+      font-size: 8pt;
+      color: ${c.coffee};
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    ${sel} .invoice-footer {
+      margin: 0;
+      padding-top: 7px;
+      border-top: 1px dashed ${c.border};
+      text-align: center;
+      font-size: 8pt;
+      color: ${c.subtle};
+    }
+  `;
+}
+
+function cloneInvoicePrintArea() {
   const area = document.getElementById("invoice-print-area");
-  if (!area) return;
-
-  const existing = document.getElementById("invoice-print-root");
-  if (existing) existing.remove();
-
+  if (!area) return null;
   const logoSrc = area.querySelector(".invoice-logo")?.getAttribute("src") || "/static/img/logo.png?v=cundino1";
   const clone = area.cloneNode(true);
   const logo = clone.querySelector(".invoice-logo");
   if (logo) {
     logo.setAttribute("src", new URL(logoSrc, window.location.origin).href);
+    logo.crossOrigin = "anonymous";
   }
+  return clone;
+}
 
-  const printPrimary = brandColor("--espresso");
-  const printAccent = brandColor("--caramel");
-  const printFoam = brandColor("--foam");
-  const printCream = brandColor("--cream");
-  const printCoffee = brandColor("--coffee");
-  const printMuted = brandColor("--text-muted");
-  const printBorder = brandColor("--border");
-  const printSubtle = brandColor("--text-subtle");
+function invoiceDownloadFilename(ext = "pdf") {
+  const inv = state.currentInvoice || {};
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, (ch) => (ch === "T" ? "-" : ""));
+  if (inv.is_pending) return `order-ticket-${stamp}.${ext}`;
+  const ref = String(inv.checkout_ref || "invoice").replace(/[^\w.-]+/g, "_");
+  return `${ref}-${stamp}.${ext}`;
+}
 
+function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-src="${src}"]`);
+    if (existing) {
+      if (existing.dataset.loaded === "1") return resolve();
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Failed to load script")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.src = src;
+    script.onload = () => {
+      script.dataset.loaded = "1";
+      resolve();
+    };
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
+async function ensureHtml2Pdf() {
+  if (window.html2pdf) return window.html2pdf;
+  await loadScriptOnce("https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js");
+  if (!window.html2pdf) throw new Error("PDF library unavailable");
+  return window.html2pdf;
+}
+
+function downloadInvoiceHtml() {
+  const clone = cloneInvoicePrintArea();
+  if (!clone) return;
+  const colors = invoiceBrandColors();
+  const title = state.currentInvoice?.is_pending ? "Order Ticket" : "Sale Invoice";
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${esc(title)}</title>
+  <style>
+    body { margin: 0; padding: 12mm; background: #fff; }
+    ${invoiceReceiptCss(".invoice-download", colors)}
+  </style>
+</head>
+<body>
+  <div class="invoice-download">${clone.outerHTML}</div>
+</body>
+</html>`;
+  triggerBlobDownload(new Blob([html], { type: "text/html;charset=utf-8" }), invoiceDownloadFilename("html"));
+  toast(
+    state.currentInvoice?.is_pending ? "Order saved to downloads" : "Invoice saved to downloads",
+    "success"
+  );
+}
+
+async function downloadInvoice() {
+  const clone = cloneInvoicePrintArea();
+  if (!clone) return;
+
+  const btn = document.getElementById("btn-download-invoice");
+  if (btn) btn.disabled = true;
+
+  const existing = document.getElementById("invoice-download-root");
+  if (existing) existing.remove();
+
+  const colors = invoiceBrandColors();
+  const root = document.createElement("div");
+  root.id = "invoice-download-root";
+  root.style.cssText = "position:fixed;left:-10000px;top:0;width:118mm;background:#fff;z-index:-1;";
+  root.innerHTML = `<style>${invoiceReceiptCss("#invoice-download-root", colors)}</style>`;
+  root.appendChild(clone);
+  document.body.appendChild(root);
+
+  try {
+    const html2pdf = await ensureHtml2Pdf();
+    const logo = root.querySelector(".invoice-logo");
+    if (logo && !logo.complete) {
+      await new Promise((resolve) => {
+        logo.onload = resolve;
+        logo.onerror = resolve;
+      });
+    }
+    await html2pdf()
+      .set({
+        margin: [8, 8, 8, 8],
+        filename: invoiceDownloadFilename("pdf"),
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+        jsPDF: { unit: "mm", format: "a5", orientation: "portrait" },
+      })
+      .from(root)
+      .save();
+    toast("Saved to downloads", "success");
+  } catch (err) {
+    downloadInvoiceHtml();
+  } finally {
+    root.remove();
+    if (btn) btn.disabled = false;
+  }
+}
+
+function printInvoice() {
+  const clone = cloneInvoicePrintArea();
+  if (!clone) return;
+
+  const existing = document.getElementById("invoice-print-root");
+  if (existing) existing.remove();
+
+  const colors = invoiceBrandColors();
   const root = document.createElement("div");
   root.id = "invoice-print-root";
   root.innerHTML = `
@@ -4130,186 +4450,8 @@ function printInvoice() {
         body > *:not(#invoice-print-root) {
           display: none !important;
         }
-        #invoice-print-root {
-          display: block !important;
-          width: 100%;
-          max-width: 118mm;
-          margin: 0 auto;
-          color: ${printPrimary};
-          font-family: "Plus Jakarta Sans", system-ui, sans-serif;
-          font-size: 10pt;
-          line-height: 1.35;
-        }
-        #invoice-print-root .invoice {
-          border: 1px solid ${printBorder};
-          border-radius: 6px;
-          overflow: hidden;
-        }
-        #invoice-print-root .invoice-brand {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          gap: 6px;
-          margin: 0;
-          padding: 12px 12px 10px;
-          background: ${printFoam};
-          border-bottom: 1px solid ${printBorder};
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        #invoice-print-root .invoice-logo {
-          width: 72px;
-          height: auto;
-          max-height: 56px;
-          object-fit: contain;
-          display: block;
-        }
-        #invoice-print-root .invoice-brand-text h2 {
-          margin: 0;
-          font-family: Fraunces, Georgia, serif;
-          font-size: 13pt;
-          font-weight: 600;
-          color: ${printPrimary};
-        }
-        #invoice-print-root .invoice-brand-text p {
-          margin: 2px 0 0;
-          font-size: 7.5pt;
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-          color: ${printMuted};
-          font-weight: 600;
-        }
-        #invoice-print-root .invoice-body {
-          padding: 10px 12px 12px;
-        }
-        #invoice-print-root .invoice-meta {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 6px 10px;
-          margin: 0 0 10px;
-          padding: 7px 8px;
-          background: ${printFoam};
-          border: 1px solid ${printBorder};
-          border-radius: 4px;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        #invoice-print-root .invoice-meta dt {
-          margin: 0;
-          font-size: 7pt;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: ${printMuted};
-          font-weight: 600;
-        }
-        #invoice-print-root .invoice-meta dd {
-          margin: 1px 0 0;
-          font-size: 9pt;
-          font-weight: 600;
-          word-break: break-word;
-        }
-        #invoice-print-root .invoice-voided-banner {
-          margin: 0 0 8px;
-          padding: 4px 6px;
-          border: 1px solid #c45c4a;
-          color: #c45c4a;
-          font-size: 8.5pt;
-          font-weight: 600;
-          text-align: center;
-          border-radius: 4px;
-        }
-        #invoice-print-root .invoice-pending-banner {
-          margin: 0 0 8px;
-          padding: 4px 6px;
-          border: 1px dashed ${printAccent};
-          color: ${printCoffee};
-          background: ${printCream};
-          font-size: 8.5pt;
-          font-weight: 600;
-          text-align: center;
-          border-radius: 4px;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        #invoice-print-root .invoice-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin: 0 0 10px;
-          font-size: 9pt;
-        }
-        #invoice-print-root .invoice-table th {
-          text-align: left;
-          font-size: 7pt;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          color: ${printMuted};
-          padding: 3px 2px;
-          border-bottom: 1.5px solid ${printBorder};
-        }
-        #invoice-print-root .invoice-table td {
-          padding: 5px 2px;
-          border-bottom: 1px solid ${printCream};
-          vertical-align: top;
-        }
-        #invoice-print-root .invoice-table tbody tr:last-child td {
-          border-bottom: none;
-        }
-        #invoice-print-root .invoice-table .num {
-          text-align: right;
-          white-space: nowrap;
-        }
-        #invoice-print-root .item-name { font-weight: 600; }
-        #invoice-print-root .item-cat {
-          display: block;
-          font-size: 7.5pt;
-          font-weight: 500;
-          color: ${printMuted};
-        }
-        #invoice-print-root .invoice-totals {
-          background: ${printCream};
-          border: 1px solid ${printBorder};
-          border-radius: 4px;
-          padding: 7px 9px;
-          margin: 0 0 8px;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        #invoice-print-root .invoice-totals-row {
-          display: flex;
-          justify-content: space-between;
-          gap: 8px;
-          font-size: 9pt;
-          padding: 1px 0;
-          color: ${printCoffee};
-        }
-        #invoice-print-root .invoice-totals-row.grand {
-          margin-top: 4px;
-          padding-top: 5px;
-          border-top: 1.5px solid ${printAccent};
-          font-family: Fraunces, Georgia, serif;
-          font-size: 12pt;
-          font-weight: 600;
-          color: ${printPrimary};
-        }
-        #invoice-print-root .invoice-notes {
-          margin: 0 0 8px;
-          padding: 5px 7px;
-          border-left: 3px solid ${printAccent};
-          background: ${printFoam};
-          font-size: 8pt;
-          color: ${printCoffee};
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
-        }
-        #invoice-print-root .invoice-footer {
-          margin: 0;
-          padding-top: 7px;
-          border-top: 1px dashed ${printBorder};
-          text-align: center;
-          font-size: 8pt;
-          color: ${printSubtle};
-        }
+        #invoice-print-root { display: block !important; }
+        ${invoiceReceiptCss("#invoice-print-root", colors)}
       }
     </style>
   `;
@@ -4322,7 +4464,6 @@ function printInvoice() {
   };
   window.addEventListener("afterprint", cleanup);
 
-  // Ensure logo is loaded before printing
   const printLogo = root.querySelector(".invoice-logo");
   const doPrint = () => {
     window.print();
@@ -8397,6 +8538,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
   document.getElementById("btn-print-invoice")?.addEventListener("click", printInvoice);
+  document.getElementById("btn-download-invoice")?.addEventListener("click", () => {
+    downloadInvoice().catch((err) => toast(err.message || "Download failed", "error"));
+  });
 
   document.getElementById("restock-form")?.addEventListener("submit", submitRestock);
   document.getElementById("adjust-form")?.addEventListener("submit", submitAdjust);

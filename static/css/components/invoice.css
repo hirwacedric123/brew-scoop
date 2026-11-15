@@ -198,9 +198,19 @@
 
 .invoice-actions {
   justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
 }
 
-.invoice-actions .btn-primary {
+.invoice-action-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.invoice-actions .btn-primary,
+.invoice-actions .btn-ghost {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
