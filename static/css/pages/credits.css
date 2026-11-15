@@ -1,0 +1,89 @@
+/* pages/credits.css */
+
+#view-credits .topbar {
+  margin-bottom: 1rem;
+}
+
+#view-credits .topbar-heading {
+  gap: 0;
+}
+
+#view-credits .topbar h2 {
+  margin: 0;
+}
+
+#view-credits .period-filters {
+  margin-bottom: 0.85rem;
+}
+
+#view-credits .custom-range-bar {
+  margin-bottom: 1rem;
+}
+
+.credits-toolbar {
+  align-items: stretch;
+}
+
+.credits-toolbar .search-box {
+  max-width: 280px;
+}
+
+.credits-toolbar select {
+  min-width: 9.5rem;
+}
+
+#credits-summary-stats {
+  margin-bottom: 1rem;
+}
+
+#view-credits .table-wrap {
+  margin-bottom: 0.75rem;
+}
+
+.credits-products {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.credits-note {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.credits-settled-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.credits-row.status-credit td:first-child {
+  box-shadow: inset 3px 0 0 var(--caramel, #b07a4a);
+}
+
+.credits-row.status-voided td {
+  opacity: 0.62;
+}
+
+.status-pill-btn {
+  cursor: pointer;
+  border: none;
+  font: inherit;
+}
+
+.status-pill-btn:hover {
+  filter: brightness(0.97);
+}
+
+@media (max-width: 900px) {
+  .credits-toolbar .search-box {
+    max-width: none;
+    width: 100%;
+  }
+
+  .credits-toolbar select {
+    flex: 1 1 9rem;
+  }
+}

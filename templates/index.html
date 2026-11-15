@@ -134,6 +134,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           <span>History</span>
         </button>
+        <button class="nav-item" data-view="credits">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M7 15h2"/><path d="M11 15h4"/></svg>
+          <span>Credits</span>
+        </button>
         <button class="nav-item" data-view="sales">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 5-6"/></svg>
           <span>Sales Reports</span>
@@ -250,8 +254,9 @@
               </div>
             </div>
             <div class="dashboard-activity-meta">
-              <span class="status-pill" id="credit-outstanding-pill" hidden></span>
+              <button type="button" class="status-pill status-pill-btn" id="credit-outstanding-pill" data-view="credits" hidden></button>
               <button type="button" class="btn btn-ghost btn-sm" id="btn-refresh-activity" title="Refresh">Refresh</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-view="credits">All credits</button>
             </div>
           </div>
           <div class="card-body card-body-flush">
@@ -1331,6 +1336,102 @@
           <button type="button" class="btn btn-ghost btn-sm" id="history-page-prev">Previous</button>
           <span class="table-pagination-info" id="history-page-info"></span>
           <button type="button" class="btn btn-ghost btn-sm" id="history-page-next">Next</button>
+        </div>
+      </section>
+
+      <!-- Credits -->
+      <section id="view-credits" class="view">
+        <header class="topbar">
+          <div class="topbar-heading">
+            <div>
+              <p class="page-eyebrow page-eyebrow-amber">Receivables</p>
+              <h2>All Credits</h2>
+              <p id="credits-subtitle">Track open and settled credit sales</p>
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-refresh-credits">Refresh</button>
+        </header>
+
+        <div class="stats-grid" id="credits-summary-stats"></div>
+
+        <div class="period-filters" id="credits-period-filters">
+          <button type="button" class="period-btn active" data-credits-preset="">All time</button>
+          <button type="button" class="period-btn" data-credits-preset="today">Today</button>
+          <button type="button" class="period-btn" data-credits-preset="week">This Week</button>
+          <button type="button" class="period-btn" data-credits-preset="month">This Month</button>
+          <button type="button" class="period-btn" data-credits-preset="custom">Custom Range</button>
+        </div>
+
+        <div class="custom-range-bar" id="credits-custom-range-bar" hidden>
+          <div class="form-group">
+            <label for="credits-from">Sale from</label>
+            <input type="date" id="credits-from">
+          </div>
+          <div class="form-group">
+            <label for="credits-to">Sale to</label>
+            <input type="date" id="credits-to">
+          </div>
+          <div class="form-group">
+            <label for="credits-settled-from">Settled from</label>
+            <input type="date" id="credits-settled-from">
+          </div>
+          <div class="form-group">
+            <label for="credits-settled-to">Settled to</label>
+            <input type="date" id="credits-settled-to">
+          </div>
+          <button type="button" class="btn btn-primary" id="btn-apply-credits-range">Apply</button>
+        </div>
+
+        <div class="toolbar credits-toolbar">
+          <div class="filter-chips" id="credits-status-chips">
+            <button type="button" class="filter-chip active" data-credits-status="all">All</button>
+            <button type="button" class="filter-chip" data-credits-status="open">Open</button>
+            <button type="button" class="filter-chip" data-credits-status="settled">Settled</button>
+            <button type="button" class="filter-chip" data-credits-status="voided">Voided</button>
+          </div>
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="search" id="credits-search" placeholder="Search customer, ref, product…" aria-label="Search credits">
+          </div>
+          <select id="credits-seller-filter" aria-label="Filter by seller">
+            <option value="">All Sellers</option>
+          </select>
+          <select id="credits-table-filter" aria-label="Filter by table">
+            <option value="">All Tables</option>
+          </select>
+          <select id="credits-category-filter" aria-label="Filter by category">
+            <option value="">All Categories</option>
+          </select>
+          <select id="credits-settled-method-filter" aria-label="Filter by settled method">
+            <option value="">Any settlement</option>
+            <option value="cash">Cash</option>
+            <option value="momo">MoMo</option>
+            <option value="visa">Visa</option>
+          </select>
+        </div>
+
+        <div class="table-wrap table-premium">
+          <table class="data-table" id="credits-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Customer / Notes</th>
+                <th>Table</th>
+                <th>Products</th>
+                <th>Seller</th>
+                <th>Status</th>
+                <th>Settled</th>
+                <th>Amount</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="credits-table-body"></tbody>
+          </table>
+        </div>
+        <div class="table-pagination" id="credits-pagination" hidden>
+          <button type="button" class="btn btn-ghost btn-sm" id="credits-page-prev">Previous</button>
+          <span class="table-pagination-info" id="credits-page-info"></span>
+          <button type="button" class="btn btn-ghost btn-sm" id="credits-page-next">Next</button>
         </div>
       </section>
 

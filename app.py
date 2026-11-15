@@ -1603,6 +1603,12 @@ def row_to_transaction(row):
         "status_label": status_label,
         "settled_at": row["settled_at"] if "settled_at" in keys else None,
         "settled_method": row["settled_method"] if "settled_method" in keys else None,
+        "settled_by": row["settled_by"] if "settled_by" in keys and row["settled_by"] else None,
+        "settled_by_name": (
+            row["settled_by_name"]
+            if "settled_by_name" in keys and row["settled_by_name"]
+            else None
+        ),
         "user_id": row["user_id"] if row["user_id"] else None,
         "seller_name": seller_name,
         "table_id": row["table_id"] if "table_id" in keys and row["table_id"] else None,
@@ -3714,16 +3720,20 @@ def _group_sale_activity(transactions):
             group = {
                 "checkout_ref": tx["checkout_ref"] or "",
                 "created_at": tx["created_at"],
+                "user_id": tx.get("user_id"),
                 "seller_name": tx["seller_name"] or "—",
                 "payment_method": tx["payment_method"],
                 "payment_status": tx["payment_status"],
                 "status_label": tx["status_label"],
                 "settled_at": tx.get("settled_at"),
                 "settled_method": tx.get("settled_method"),
+                "settled_by": tx.get("settled_by"),
+                "settled_by_name": tx.get("settled_by_name"),
                 "notes": tx["notes"] or "",
                 "table_id": tx.get("table_id"),
                 "table_name": tx.get("table_name") or "—",
                 "is_voided": tx["is_voided"],
+                "categories": [],
                 "items": [],
                 "total_amount": 0.0,
                 "total_units": 0,
@@ -3733,9 +3743,13 @@ def _group_sale_activity(transactions):
         group = by_ref[key]
         group["items"].append({
             "product_name": tx["product_name"],
+            "category": tx.get("category") or "",
             "quantity": tx["quantity"],
             "total_amount": tx["total_amount"],
         })
+        category = (tx.get("category") or "").strip()
+        if category and category not in group["categories"]:
+            group["categories"].append(category)
         group["total_amount"] = round(group["total_amount"] + tx["total_amount"], 2)
         group["total_units"] += tx["quantity"]
         # Prefer credit/voided status if mixed (shouldn't happen)
@@ -3745,7 +3759,197 @@ def _group_sale_activity(transactions):
         elif group["status_label"] != "voided" and tx["status_label"] == "credit":
             group["status_label"] = "credit"
             group["payment_status"] = "credit"
+        if not group.get("settled_by_name") and tx.get("settled_by_name"):
+            group["settled_by_name"] = tx.get("settled_by_name")
+            group["settled_by"] = tx.get("settled_by")
+        if not group.get("settled_at") and tx.get("settled_at"):
+            group["settled_at"] = tx.get("settled_at")
+            group["settled_method"] = tx.get("settled_method")
     return groups
+
+
+@app.route("/api/sales/credits", methods=["GET"])
+@role_required("admin", "supervisor", "stock_manager")
+def list_credit_sales():
+    db = get_db()
+    biz_id, err = _biz_or_error()
+    if err:
+        return err
+
+    status = (request.args.get("status") or "all").strip().lower()
+    if status not in ("all", "open", "settled", "voided"):
+        return jsonify({"error": "Invalid status filter"}), 400
+
+    preset = request.args.get("preset", "").strip()
+    date_from = request.args.get("from", "").strip()
+    date_to = request.args.get("to", "").strip()
+    settled_from = request.args.get("settled_from", "").strip()
+    settled_to = request.args.get("settled_to", "").strip()
+    user_id = request.args.get("user_id", "").strip()
+    table_id = request.args.get("table_id", "").strip()
+    settled_method = (request.args.get("settled_method") or "").strip().lower()
+    category = request.args.get("category", "").strip()
+    q = (request.args.get("q") or "").strip()
+
+    if preset == "today":
+        date_from = date_to = today_kigali()
+    elif preset == "week":
+        date_from, date_to = week_range_kigali()
+    elif preset == "month":
+        date_from, date_to = month_range_kigali()
+
+    if date_from and not parse_date(date_from):
+        return jsonify({"error": "Invalid from date"}), 400
+    if date_to and not parse_date(date_to):
+        return jsonify({"error": "Invalid to date"}), 400
+    if settled_from and not parse_date(settled_from):
+        return jsonify({"error": "Invalid settled from date"}), 400
+    if settled_to and not parse_date(settled_to):
+        return jsonify({"error": "Invalid settled to date"}), 400
+    if date_from and date_to and date_from > date_to:
+        return jsonify({"error": "Invalid date range"}), 400
+    if settled_from and settled_to and settled_from > settled_to:
+        return jsonify({"error": "Invalid settled date range"}), 400
+    if settled_method and settled_method not in SETTLE_PAYMENT_METHODS:
+        return jsonify({"error": "Invalid settled method"}), 400
+
+    parsed_table_id = None
+    if table_id:
+        try:
+            parsed_table_id = int(table_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid table filter"}), 400
+
+    try:
+        limit = min(int(request.args.get("limit", 500)), 1000)
+    except (TypeError, ValueError):
+        limit = 500
+
+    query = """
+        SELECT t.*, p.name AS product_name, p.category,
+               u.display_name AS seller_name,
+               st.name AS table_name,
+               sb.display_name AS settled_by_name
+        FROM transactions t
+        JOIN products p ON p.id = t.product_id
+        LEFT JOIN users u ON u.id = t.user_id
+        LEFT JOIN service_tables st ON st.id = t.table_id
+        LEFT JOIN users sb ON sb.id = t.settled_by
+        WHERE t.type = 'sale'
+          AND t.business_id = ?
+          AND lower(COALESCE(t.payment_method, '')) = 'credit'
+    """
+    params = [biz_id]
+
+    if status == "open":
+        query += """
+          AND t.voided_at IS NULL
+          AND (
+            t.payment_status = 'credit'
+            OR (t.payment_status IS NULL AND lower(COALESCE(t.payment_method, '')) = 'credit')
+          )
+        """
+    elif status == "settled":
+        query += """
+          AND t.voided_at IS NULL
+          AND t.payment_status = 'paid'
+        """
+    elif status == "voided":
+        query += " AND t.voided_at IS NOT NULL"
+
+    if date_from:
+        query += " AND substr(t.created_at, 1, 10) >= ?"
+        params.append(date_from)
+    if date_to:
+        query += " AND substr(t.created_at, 1, 10) <= ?"
+        params.append(date_to)
+    if settled_from:
+        query += " AND t.settled_at IS NOT NULL AND substr(t.settled_at, 1, 10) >= ?"
+        params.append(settled_from)
+    if settled_to:
+        query += " AND t.settled_at IS NOT NULL AND substr(t.settled_at, 1, 10) <= ?"
+        params.append(settled_to)
+    if parsed_table_id is not None:
+        query += " AND t.table_id = ?"
+        params.append(parsed_table_id)
+    if settled_method:
+        query += " AND lower(COALESCE(t.settled_method, '')) = ?"
+        params.append(settled_method)
+
+    user_clause, user_params = _sale_user_clause(user_id, "t")
+    query += user_clause
+    params.extend(user_params)
+
+    # Keep full checkout groups when category/search matches any line.
+    if category or q:
+        match_clause = """
+            SELECT DISTINCT COALESCE(t2.checkout_ref, 'line-' || t2.id)
+            FROM transactions t2
+            JOIN products p2 ON p2.id = t2.product_id
+            LEFT JOIN users u2 ON u2.id = t2.user_id
+            LEFT JOIN service_tables st2 ON st2.id = t2.table_id
+            LEFT JOIN users sb2 ON sb2.id = t2.settled_by
+            WHERE t2.type = 'sale'
+              AND t2.business_id = ?
+              AND lower(COALESCE(t2.payment_method, '')) = 'credit'
+        """
+        match_params = [biz_id]
+        if category:
+            match_clause += " AND p2.category = ?"
+            match_params.append(category)
+        if q:
+            like = f"%{q}%"
+            match_clause += """
+              AND (
+                COALESCE(t2.notes, '') LIKE ?
+                OR COALESCE(t2.checkout_ref, '') LIKE ?
+                OR COALESCE(p2.name, '') LIKE ?
+                OR COALESCE(u2.display_name, '') LIKE ?
+                OR COALESCE(st2.name, '') LIKE ?
+                OR COALESCE(sb2.display_name, '') LIKE ?
+              )
+            """
+            match_params.extend([like, like, like, like, like, like])
+        query += f" AND COALESCE(t.checkout_ref, 'line-' || t.id) IN ({match_clause})"
+        params.extend(match_params)
+
+    query += " ORDER BY t.created_at DESC, t.id DESC LIMIT ?"
+    params.append(limit)
+
+    rows = db.execute(query, params).fetchall()
+    txs = [row_to_transaction(r) for r in rows]
+    sales = _group_sale_activity(txs)
+
+    open_sales = [s for s in sales if s["status_label"] == "credit"]
+    settled_sales = [s for s in sales if s["status_label"] == "paid"]
+    voided_sales = [s for s in sales if s["status_label"] == "voided"]
+
+    summary = {
+        "count": len(sales),
+        "open_count": len(open_sales),
+        "open_amount": round(sum(s["total_amount"] for s in open_sales), 2),
+        "settled_count": len(settled_sales),
+        "settled_amount": round(sum(s["total_amount"] for s in settled_sales), 2),
+        "voided_count": len(voided_sales),
+        "voided_amount": round(sum(s["total_amount"] for s in voided_sales), 2),
+        "total_amount": round(sum(s["total_amount"] for s in sales), 2),
+    }
+
+    return jsonify({
+        "status": status,
+        "preset": preset or None,
+        "from": date_from or None,
+        "to": date_to or None,
+        "settled_from": settled_from or None,
+        "settled_to": settled_to or None,
+        "user_id": _parse_user_id_filter(user_id),
+        "table_id": parsed_table_id,
+        "settled_method": settled_method or None,
+        "category": category or None,
+        "q": q or None,
+        "summary": summary,
+        "credits": sales,
+    })
 
 
 @app.route("/api/sales/settle-credit", methods=["POST"])
@@ -3820,11 +4024,13 @@ def settle_credit_sale():
     updated = db.execute(
         """SELECT t.*, p.name AS product_name, p.category,
                   u.display_name AS seller_name,
-                  st.name AS table_name
+                  st.name AS table_name,
+                  sb.display_name AS settled_by_name
            FROM transactions t
            JOIN products p ON p.id = t.product_id
            LEFT JOIN users u ON u.id = t.user_id
            LEFT JOIN service_tables st ON st.id = t.table_id
+           LEFT JOIN users sb ON sb.id = t.settled_by
            WHERE t.type = 'sale' AND t.checkout_ref = ? AND t.business_id = ?
            ORDER BY t.id ASC""",
         (checkout_ref, biz_id),

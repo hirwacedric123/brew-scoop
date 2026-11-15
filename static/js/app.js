@@ -42,6 +42,20 @@ const state = {
   selectedHistoryShiftId: null,
   historyPage: 1,
   historyRowHtml: [],
+  creditsStatus: "all",
+  creditsPreset: "",
+  creditsFrom: null,
+  creditsTo: null,
+  creditsSettledFrom: null,
+  creditsSettledTo: null,
+  creditsSellerId: "",
+  creditsTableId: "",
+  creditsCategory: "",
+  creditsSettledMethod: "",
+  creditsSearch: "",
+  creditsReport: null,
+  creditsPage: 1,
+  creditsRowHtml: [],
   activityLogs: [],
   activityPage: 1,
   lotsPage: 1,
@@ -80,6 +94,7 @@ const VIEW_TITLES = {
   sell: "Point of Sale",
   restock: "Restock",
   history: "History",
+  credits: "Credits",
   sales: "Sales Reports",
   activity: "Activity Log",
   businesses: "Businesses",
@@ -126,6 +141,9 @@ function saveUIState() {
         historyShiftPreset: state.historyShiftPreset,
         historySellerId: state.historySellerId,
         salesSellerId: state.salesSellerId,
+        creditsStatus: state.creditsStatus,
+        creditsPreset: state.creditsPreset,
+        creditsSellerId: state.creditsSellerId,
       })
     );
   } catch (_) {
@@ -141,6 +159,11 @@ function clearPosLocalState() {
   state.keepSellCategory = false;
   state.historySellerId = "";
   state.salesSellerId = "";
+  state.creditsSellerId = "";
+  state.creditsTableId = "";
+  state.creditsCategory = "";
+  state.creditsSettledMethod = "";
+  state.creditsSearch = "";
 }
 
 function restoreUIState() {
@@ -175,6 +198,9 @@ function restoreUIState() {
       state.historyShiftPreset = saved.historyShiftPreset;
     if (saved.historySellerId) state.historySellerId = saved.historySellerId;
     if (saved.salesSellerId) state.salesSellerId = saved.salesSellerId;
+    if (saved.creditsStatus) state.creditsStatus = saved.creditsStatus;
+    if (saved.creditsPreset != null) state.creditsPreset = saved.creditsPreset;
+    if (saved.creditsSellerId) state.creditsSellerId = saved.creditsSellerId;
 
     return saved.activeView || null;
   } catch (_) {
@@ -814,7 +840,7 @@ function toast(message, type = "success") {
 function initNavigation() {
   document.addEventListener("click", (e) => {
     const trigger = e.target.closest(
-      ".nav-item[data-view], .bottom-nav-item[data-view], [data-view].btn, .shift-result-link[data-view]"
+      ".nav-item[data-view], .bottom-nav-item[data-view], [data-view].btn, [data-view].status-pill-btn, .shift-result-link[data-view]"
     );
     if (!trigger?.dataset.view) return;
     switchView(trigger.dataset.view);
@@ -894,6 +920,9 @@ function switchView(viewId) {
     if (isSeller()) loadCategories();
     else loadSellers();
     loadHistory();
+  }
+  if (viewId === "credits") {
+    loadCreditsView();
   }
   if (viewId === "sales") {
     if (!isSeller()) loadSellers();
@@ -2076,6 +2105,15 @@ function populateCategorySelects() {
     if (names.includes(current)) historyCategory.value = current;
   }
 
+  const creditsCategory = document.getElementById("credits-category-filter");
+  if (creditsCategory) {
+    const current = state.creditsCategory || creditsCategory.value;
+    creditsCategory.innerHTML =
+      '<option value="">All Categories</option>' +
+      names.map((n) => `<option value="${escAttr(n)}">${esc(n)}</option>`).join("");
+    if (names.includes(current)) creditsCategory.value = current;
+  }
+
   const productCategory = document.getElementById("product-category");
   if (productCategory) {
     const current = productCategory.value;
@@ -2337,7 +2375,7 @@ function renderDashboardSaleActivity(d) {
     const count = d.credit_open_sales || 0;
     if (amount > 0) {
       pill.hidden = false;
-      pill.className = "status-pill status-pill-warn";
+      pill.className = "status-pill status-pill-warn status-pill-btn";
       pill.textContent = `${fmt.format(amount)} on credit (${count})`;
     } else {
       pill.hidden = true;
@@ -2405,8 +2443,16 @@ function countLabel(n, one, many) {
 let pendingSettleCheckoutRef = null;
 let pendingSettleMethod = null;
 
+function findCreditSale(checkoutRef) {
+  return (
+    (state.creditsReport?.credits || []).find((s) => s.checkout_ref === checkoutRef) ||
+    (state.dashboard?.sale_activity || []).find((s) => s.checkout_ref === checkoutRef) ||
+    null
+  );
+}
+
 function openSettleCreditModal(checkoutRef) {
-  const sale = (state.dashboard?.sale_activity || []).find((s) => s.checkout_ref === checkoutRef);
+  const sale = findCreditSale(checkoutRef);
   pendingSettleCheckoutRef = checkoutRef;
   pendingSettleMethod = null;
   document.querySelectorAll("#settle-payment-methods .payment-chip").forEach((c) => c.classList.remove("active"));
@@ -2443,7 +2489,11 @@ async function submitSettleCredit(e) {
     });
     hideModal("settle-credit-modal");
     toast(data.message || "Credit marked as paid", "success");
-    await loadDashboard();
+    const refreshes = [loadDashboard()];
+    if (document.getElementById("view-credits")?.classList.contains("active")) {
+      refreshes.push(loadCredits());
+    }
+    await Promise.all(refreshes);
   } catch (err) {
     toast(err.message, "error");
   } finally {
@@ -5659,8 +5709,225 @@ async function loadSellers() {
     state.sellers = await api("/api/sellers");
     populateSellerFilter("history-seller-filter", state.historySellerId);
     populateSellerFilter("sales-seller-filter", state.salesSellerId);
+    populateSellerFilter("credits-seller-filter", state.creditsSellerId);
   } catch {
     // Seller filters are optional if the request fails.
+  }
+}
+
+function populateCreditsTableFilter() {
+  const sel = document.getElementById("credits-table-filter");
+  if (!sel) return;
+  const current = state.creditsTableId || sel.value;
+  const tables = state.serviceTables || [];
+  sel.innerHTML =
+    `<option value="">All Tables</option>` +
+    tables
+      .map(
+        (t) =>
+          `<option value="${t.id}"${String(t.id) === String(current) ? " selected" : ""}>${esc(
+            t.name
+          )}</option>`
+      )
+      .join("");
+}
+
+function syncCreditsUiFromState() {
+  document.querySelectorAll("#credits-status-chips .filter-chip").forEach((chip) => {
+    chip.classList.toggle("active", chip.dataset.creditsStatus === (state.creditsStatus || "all"));
+  });
+  document.querySelectorAll("#credits-period-filters .period-btn").forEach((btn) => {
+    const preset = btn.dataset.creditsPreset ?? "";
+    btn.classList.toggle("active", preset === (state.creditsPreset || ""));
+  });
+  const customBar = document.getElementById("credits-custom-range-bar");
+  if (customBar) customBar.hidden = state.creditsPreset !== "custom";
+  const fromEl = document.getElementById("credits-from");
+  const toEl = document.getElementById("credits-to");
+  const settledFromEl = document.getElementById("credits-settled-from");
+  const settledToEl = document.getElementById("credits-settled-to");
+  if (fromEl) fromEl.value = state.creditsFrom || "";
+  if (toEl) toEl.value = state.creditsTo || "";
+  if (settledFromEl) settledFromEl.value = state.creditsSettledFrom || "";
+  if (settledToEl) settledToEl.value = state.creditsSettledTo || "";
+  const searchEl = document.getElementById("credits-search");
+  if (searchEl && searchEl.value !== (state.creditsSearch || "")) {
+    searchEl.value = state.creditsSearch || "";
+  }
+  const methodEl = document.getElementById("credits-settled-method-filter");
+  if (methodEl) methodEl.value = state.creditsSettledMethod || "";
+  const categoryEl = document.getElementById("credits-category-filter");
+  if (categoryEl) categoryEl.value = state.creditsCategory || "";
+  populateSellerFilter("credits-seller-filter", state.creditsSellerId);
+  populateCreditsTableFilter();
+}
+
+async function loadCreditsView() {
+  syncCreditsUiFromState();
+  await Promise.all([
+    loadSellers(),
+    loadCategories(),
+    ensureServiceTablesLoaded().catch(() => {}),
+  ]);
+  syncCreditsUiFromState();
+  await loadCredits();
+}
+
+async function ensureServiceTablesLoaded() {
+  if (state.serviceTables?.length) {
+    populateCreditsTableFilter();
+    return state.serviceTables;
+  }
+  state.serviceTables = await api("/api/tables");
+  populateCreditsTableFilter();
+  return state.serviceTables;
+}
+
+async function loadCredits() {
+  const params = new URLSearchParams({ limit: "500" });
+  const status = state.creditsStatus || "all";
+  if (status && status !== "all") params.set("status", status);
+
+  if (state.creditsPreset && state.creditsPreset !== "custom") {
+    params.set("preset", state.creditsPreset);
+  } else {
+    if (state.creditsFrom) params.set("from", state.creditsFrom);
+    if (state.creditsTo) params.set("to", state.creditsTo);
+  }
+  if (state.creditsSettledFrom) params.set("settled_from", state.creditsSettledFrom);
+  if (state.creditsSettledTo) params.set("settled_to", state.creditsSettledTo);
+  if (state.creditsSellerId) params.set("user_id", state.creditsSellerId);
+  if (state.creditsTableId) params.set("table_id", state.creditsTableId);
+  if (state.creditsCategory) params.set("category", state.creditsCategory);
+  if (state.creditsSettledMethod) params.set("settled_method", state.creditsSettledMethod);
+  if (state.creditsSearch) params.set("q", state.creditsSearch);
+
+  try {
+    const data = await api(`/api/sales/credits?${params}`);
+    state.creditsReport = data;
+    state.creditsPage = 1;
+    renderCredits(data);
+  } catch (e) {
+    toast(e.message, "error");
+  }
+}
+
+function renderCreditsSummary(summary = {}) {
+  const el = document.getElementById("credits-summary-stats");
+  if (!el) return;
+  el.innerHTML = `
+    ${statCard("alert", UI_ICONS.alert, "Open credits", fmt.format(summary.open_amount || 0), countLabel(summary.open_count || 0, "sale", "sales"))}
+    ${statCard("revenue", UI_ICONS.revenue, "Settled", fmt.format(summary.settled_amount || 0), countLabel(summary.settled_count || 0, "sale", "sales"))}
+    ${statCard("sales", UI_ICONS.sales, "Matching total", fmt.format(summary.total_amount || 0), countLabel(summary.count || 0, "credit", "credits"))}
+    ${statCard("stock", UI_ICONS.clock, "Voided", fmt.format(summary.voided_amount || 0), countLabel(summary.voided_count || 0, "sale", "sales"))}
+  `;
+}
+
+function renderCredits(data) {
+  const subtitle = document.getElementById("credits-subtitle");
+  if (subtitle) {
+    const parts = [];
+    if (data.preset === "today") parts.push("Today");
+    else if (data.preset === "week") parts.push("This week");
+    else if (data.preset === "month") parts.push("This month");
+    else if (data.from && data.to) parts.push(formatRangeLabel(data.from, data.to));
+    else parts.push("All time");
+    if (data.status && data.status !== "all") parts.push(data.status);
+    subtitle.textContent = parts.join(" · ");
+  }
+
+  renderCreditsSummary(data.summary || {});
+  const rows = data.credits || [];
+  if (!rows.length) {
+    state.creditsRowHtml = [];
+    const tbody = document.getElementById("credits-table-body");
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="9">${emptyState(
+        UI_ICONS.sales,
+        "No credit sales",
+        "Try another filter, or record a credit sale from Sell."
+      )}</td></tr>`;
+    }
+    updatePager("credits", getPageSlice([], 1));
+    return;
+  }
+
+  state.creditsRowHtml = rows.map((sale) => {
+    const status = saleStatusLabel(sale.status_label);
+    const products = (sale.items || [])
+      .map((item) => `${esc(item.product_name)} ×${item.quantity}`)
+      .join(", ");
+    const settleBtn =
+      sale.status_label === "credit" && !sale.is_voided
+        ? `<button type="button" class="btn btn-ghost btn-sm" data-settle-credit="${escAttr(
+            sale.checkout_ref
+          )}">Mark paid</button>`
+        : "";
+    let settled = "—";
+    if (sale.settled_at || sale.settled_method) {
+      const when = sale.settled_at
+        ? `${formatDateLabel(sale.settled_at.slice(0, 10))} ${formatTime(sale.settled_at)}`
+        : "";
+      settled = `<div class="credits-settled-meta">
+        <strong>${esc(paymentMethodLabel(sale.settled_method))}</strong>
+        ${when ? `<div>${esc(when)}</div>` : ""}
+        ${sale.settled_by_name ? `<div>by ${esc(sale.settled_by_name)}</div>` : ""}
+      </div>`;
+    }
+    return `
+      <tr class="credits-row status-${status.cls}">
+        <td>
+          <strong>${esc(formatTime(sale.created_at))}</strong>
+          <div class="text-muted activity-date">${esc(
+            sale.created_at ? formatDateLabel(sale.created_at.slice(0, 10)) : ""
+          )}</div>
+          <div class="text-muted" style="font-size:0.72rem">${esc(sale.checkout_ref || "")}</div>
+        </td>
+        <td>
+          <strong>${esc(sale.notes || "—")}</strong>
+        </td>
+        <td><strong>${esc(sale.table_name || "—")}</strong></td>
+        <td><div class="credits-products">${products || "—"}</div></td>
+        <td>${esc(sale.seller_name || "—")}</td>
+        <td><span class="sale-status-badge ${status.cls}">${status.text}</span></td>
+        <td>${settled}</td>
+        <td><strong>${fmt.format(sale.total_amount)}</strong></td>
+        <td class="dashboard-activity-actions">${settleBtn}</td>
+      </tr>`;
+  });
+  renderCreditsPage();
+}
+
+function renderCreditsPage() {
+  const tbody = document.getElementById("credits-table-body");
+  if (!tbody) return;
+  const slice = getPageSlice(state.creditsRowHtml || [], state.creditsPage || 1);
+  state.creditsPage = slice.page;
+  if (!slice.items.length) {
+    tbody.innerHTML = `<tr><td colspan="9">${emptyState(
+      UI_ICONS.sales,
+      "No credit sales",
+      "Try another filter, or record a credit sale from Sell."
+    )}</td></tr>`;
+    updatePager("credits", slice);
+    return;
+  }
+  tbody.innerHTML = slice.items.join("");
+  updatePager("credits", slice);
+}
+
+function readCreditsFiltersFromDom() {
+  state.creditsSellerId = document.getElementById("credits-seller-filter")?.value || "";
+  state.creditsTableId = document.getElementById("credits-table-filter")?.value || "";
+  state.creditsCategory = document.getElementById("credits-category-filter")?.value || "";
+  state.creditsSettledMethod =
+    document.getElementById("credits-settled-method-filter")?.value || "";
+  state.creditsSearch = document.getElementById("credits-search")?.value?.trim() || "";
+  if (state.creditsPreset === "custom") {
+    state.creditsFrom = document.getElementById("credits-from")?.value || null;
+    state.creditsTo = document.getElementById("credits-to")?.value || null;
+    state.creditsSettledFrom = document.getElementById("credits-settled-from")?.value || null;
+    state.creditsSettledTo = document.getElementById("credits-settled-to")?.value || null;
   }
 }
 
@@ -7775,6 +8042,14 @@ document.addEventListener("DOMContentLoaded", () => {
     renderHistoryPage
   );
   bindPagerControls(
+    "credits",
+    () => state.creditsPage,
+    (page) => {
+      state.creditsPage = page;
+    },
+    renderCreditsPage
+  );
+  bindPagerControls(
     "activity",
     () => state.activityPage,
     (page) => {
@@ -7919,6 +8194,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!btn) return;
     openSettleCreditModal(btn.dataset.settleCredit);
   });
+  document.getElementById("credits-table-body")?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-settle-credit]");
+    if (!btn) return;
+    openSettleCreditModal(btn.dataset.settleCredit);
+  });
   document.querySelectorAll("#settle-payment-methods .payment-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       document.querySelectorAll("#settle-payment-methods .payment-chip").forEach((c) => c.classList.remove("active"));
@@ -7927,6 +8207,55 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
   document.getElementById("settle-credit-form")?.addEventListener("submit", submitSettleCredit);
+  document.getElementById("btn-refresh-credits")?.addEventListener("click", () => {
+    loadCredits().catch((err) => toast(err.message, "error"));
+  });
+  document.querySelectorAll("#credits-status-chips .filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      state.creditsStatus = chip.dataset.creditsStatus || "all";
+      syncCreditsUiFromState();
+      saveUIState();
+      loadCredits();
+    });
+  });
+  document.querySelectorAll("#credits-period-filters .period-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.creditsPreset = btn.dataset.creditsPreset ?? "";
+      if (state.creditsPreset !== "custom") {
+        state.creditsFrom = null;
+        state.creditsTo = null;
+        state.creditsSettledFrom = null;
+        state.creditsSettledTo = null;
+      }
+      syncCreditsUiFromState();
+      saveUIState();
+      if (state.creditsPreset === "custom") return;
+      loadCredits();
+    });
+  });
+  document.getElementById("btn-apply-credits-range")?.addEventListener("click", () => {
+    state.creditsPreset = "custom";
+    readCreditsFiltersFromDom();
+    saveUIState();
+    loadCredits();
+  });
+  const debouncedLoadCredits = debounce(() => {
+    readCreditsFiltersFromDom();
+    loadCredits();
+  }, 200);
+  document.getElementById("credits-search")?.addEventListener("input", debouncedLoadCredits);
+  [
+    "credits-seller-filter",
+    "credits-table-filter",
+    "credits-category-filter",
+    "credits-settled-method-filter",
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", () => {
+      readCreditsFiltersFromDom();
+      saveUIState();
+      loadCredits();
+    });
+  });
   document.getElementById("shift-start-form")?.addEventListener("submit", submitStartShift);
   document.getElementById("shift-close-form")?.addEventListener("submit", submitCloseShift);
   document.getElementById("btn-new-shift")?.addEventListener("click", () => {
