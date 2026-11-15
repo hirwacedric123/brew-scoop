@@ -4009,7 +4009,7 @@ function showInvoice(invoice) {
       <dt>Seller</dt>
       <dd>${esc(seller)}</dd>
     </div>
-    <div>
+    <div class="invoice-meta-wide">
       <dt>Payment</dt>
       <dd>${esc(payment)}</dd>
     </div>
@@ -4095,14 +4095,26 @@ function printOrderFromCart() {
 /** Convert CSS colors (including color(srgb …)) to #rrggbb for PDF/canvas. */
 function normalizeCssColor(value, fallback = "#012100") {
   if (!value) return fallback;
+  const raw = String(value).trim();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) {
+    return raw.length === 4
+      ? `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`.toLowerCase()
+      : raw.toLowerCase();
+  }
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 1;
-  const ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return fallback;
-  ctx.fillStyle = fallback;
-  ctx.fillStyle = value;
-  const out = ctx.fillStyle;
-  return out || fallback;
+  try {
+    ctx.fillStyle = "#000000";
+    ctx.fillStyle = raw;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    const hex = (n) => n.toString(16).padStart(2, "0");
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+  } catch {
+    return fallback;
+  }
 }
 
 function invoiceBrandColors() {
@@ -4119,24 +4131,28 @@ function invoiceBrandColors() {
 }
 
 function invoiceReceiptCss(sel, c) {
+  // Empty sel = unscoped rules for the PDF iframe (html2canvas re-parents nodes).
+  const s = (rule) => (sel ? `${sel} ${rule}` : rule);
+  const root = sel || ".invoice-download, .invoice";
   return `
-    ${sel} {
+    ${root} {
       width: 100%;
       max-width: 118mm;
       margin: 0 auto;
       color: ${c.primary};
-      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      font-family: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
       font-size: 10pt;
       line-height: 1.35;
       background: #fff;
+      box-sizing: border-box;
     }
-    ${sel} .invoice {
+    ${s(".invoice")} {
       border: 1px solid ${c.border};
       border-radius: 6px;
       overflow: hidden;
       background: #fff;
     }
-    ${sel} .invoice-brand {
+    ${s(".invoice-brand")} {
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -4149,30 +4165,33 @@ function invoiceReceiptCss(sel, c) {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    ${sel} .invoice-logo {
+    ${s(".invoice-logo")} {
       width: 72px;
       height: auto;
       max-height: 56px;
       object-fit: contain;
       display: block;
     }
-    ${sel} .invoice-brand-text h2 {
+    ${s(".invoice-brand-text h2")} {
       margin: 0;
-      font-family: Fraunces, Georgia, serif;
+      font-family: Fraunces, Georgia, "Times New Roman", serif;
       font-size: 13pt;
       font-weight: 600;
       color: ${c.primary};
     }
-    ${sel} .invoice-brand-text p {
+    ${s(".invoice-brand-text p")} {
       margin: 2px 0 0;
       font-size: 7.5pt;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: ${c.muted};
       font-weight: 600;
+      background: transparent;
+      padding: 0;
+      border-radius: 0;
     }
-    ${sel} .invoice-body { padding: 10px 12px 12px; }
-    ${sel} .invoice-meta {
+    ${s(".invoice-body")} { padding: 10px 12px 12px; }
+    ${s(".invoice-meta")} {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 6px 10px;
@@ -4184,7 +4203,7 @@ function invoiceReceiptCss(sel, c) {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    ${sel} .invoice-meta dt {
+    ${s(".invoice-meta dt")} {
       margin: 0;
       font-size: 7pt;
       text-transform: uppercase;
@@ -4192,23 +4211,32 @@ function invoiceReceiptCss(sel, c) {
       color: ${c.muted};
       font-weight: 600;
     }
-    ${sel} .invoice-meta dd {
+    ${s(".invoice-meta dd")} {
       margin: 1px 0 0;
       font-size: 9pt;
       font-weight: 600;
       word-break: break-word;
+      color: ${c.primary};
     }
-    ${sel} .invoice-voided-banner {
+    ${s(".invoice-meta-wide")} {
+      grid-column: 1 / -1;
+      padding-top: 4px;
+      border-top: 1px solid ${c.border};
+    }
+    ${s(".invoice-voided-banner")} {
       margin: 0 0 8px;
       padding: 4px 6px;
       border: 1px solid #c45c4a;
       color: #c45c4a;
+      background: #fde8e4;
       font-size: 8.5pt;
       font-weight: 600;
       text-align: center;
       border-radius: 4px;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
-    ${sel} .invoice-pending-banner {
+    ${s(".invoice-pending-banner")} {
       margin: 0 0 8px;
       padding: 4px 6px;
       border: 1px dashed ${c.accent};
@@ -4221,13 +4249,13 @@ function invoiceReceiptCss(sel, c) {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    ${sel} .invoice-table {
+    ${s(".invoice-table")} {
       width: 100%;
       border-collapse: collapse;
       margin: 0 0 10px;
       font-size: 9pt;
     }
-    ${sel} .invoice-table th {
+    ${s(".invoice-table th")} {
       text-align: left;
       font-size: 7pt;
       text-transform: uppercase;
@@ -4236,24 +4264,26 @@ function invoiceReceiptCss(sel, c) {
       padding: 3px 2px;
       border-bottom: 1.5px solid ${c.border};
     }
-    ${sel} .invoice-table td {
+    ${s(".invoice-table td")} {
       padding: 5px 2px;
       border-bottom: 1px solid ${c.cream};
       vertical-align: top;
+      color: ${c.primary};
     }
-    ${sel} .invoice-table tbody tr:last-child td { border-bottom: none; }
-    ${sel} .invoice-table .num {
+    ${s(".invoice-table tbody tr:last-child td")} { border-bottom: none; }
+    ${s(".invoice-table .num")} {
       text-align: right;
       white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
-    ${sel} .item-name { font-weight: 600; }
-    ${sel} .item-cat {
+    ${s(".item-name")} { font-weight: 600; display: block; }
+    ${s(".item-cat")} {
       display: block;
       font-size: 7.5pt;
       font-weight: 500;
       color: ${c.muted};
     }
-    ${sel} .invoice-totals {
+    ${s(".invoice-totals")} {
       background: ${c.cream};
       border: 1px solid ${c.border};
       border-radius: 4px;
@@ -4262,7 +4292,7 @@ function invoiceReceiptCss(sel, c) {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    ${sel} .invoice-totals-row {
+    ${s(".invoice-totals-row")} {
       display: flex;
       justify-content: space-between;
       gap: 8px;
@@ -4270,16 +4300,19 @@ function invoiceReceiptCss(sel, c) {
       padding: 1px 0;
       color: ${c.coffee};
     }
-    ${sel} .invoice-totals-row.grand {
+    ${s(".invoice-totals-row.grand")} {
       margin-top: 4px;
       padding-top: 5px;
       border-top: 1.5px solid ${c.accent};
-      font-family: Fraunces, Georgia, serif;
+      font-family: Fraunces, Georgia, "Times New Roman", serif;
       font-size: 12pt;
       font-weight: 600;
       color: ${c.primary};
     }
-    ${sel} .invoice-notes {
+    ${s(".invoice-totals-row.grand span:last-child")} {
+      color: ${c.primary};
+    }
+    ${s(".invoice-notes")} {
       margin: 0 0 8px;
       padding: 5px 7px;
       border-left: 3px solid ${c.accent};
@@ -4289,7 +4322,7 @@ function invoiceReceiptCss(sel, c) {
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    ${sel} .invoice-footer {
+    ${s(".invoice-footer")} {
       margin: 0;
       padding-top: 7px;
       border-top: 1px dashed ${c.border};
@@ -4298,6 +4331,12 @@ function invoiceReceiptCss(sel, c) {
       color: ${c.subtle};
     }
   `;
+}
+
+function invoiceExportFontLinks() {
+  return `<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">`;
 }
 
 function cloneInvoicePrintArea() {
@@ -4395,6 +4434,7 @@ function downloadInvoiceHtml(reason) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${esc(title)}</title>
+  ${invoiceExportFontLinks()}
   <style>
     body { margin: 0; padding: 12mm; background: #fff; }
     ${invoiceReceiptCss(".invoice-download", colors)}
@@ -4473,15 +4513,21 @@ async function downloadInvoice() {
   const frameDoc = frame.contentDocument;
   const frameWin = frame.contentWindow;
   frameDoc.open();
-  frameDoc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-    html,body{margin:0;padding:8px;background:#fff;}
-    ${invoiceReceiptCss(".invoice-download", colors)}
+  // Unscoped CSS in the iframe so html2canvas keeps styles after it re-parents nodes.
+  frameDoc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+    ${invoiceExportFontLinks()}
+    <style>
+    html,body{margin:0;padding:10px;background:#fff;}
+    *{box-sizing:border-box;}
+    ${invoiceReceiptCss("", colors)}
   </style></head><body><div class="invoice-download" id="invoice-export-target"></div></body></html>`);
   frameDoc.close();
 
   const targetWrap = frameDoc.getElementById("invoice-export-target");
   targetWrap.appendChild(frameDoc.importNode(clone, true));
-  const target = targetWrap.querySelector(".invoice") || targetWrap;
+  // Capture the wrapper (not only .invoice). html2canvas re-parents the node, so
+  // selectors like `.invoice-download .invoice-brand` must stay in the cloned tree.
+  const target = targetWrap;
 
   try {
     await loadScriptIntoDocument(
@@ -4490,6 +4536,9 @@ async function downloadInvoice() {
     );
     if (!frameWin.html2pdf) throw new Error("PDF library unavailable in export frame");
 
+    if (frameDoc.fonts?.ready) {
+      await Promise.race([frameDoc.fonts.ready, new Promise((r) => setTimeout(r, 1500))]);
+    }
     const exportLogo = target.querySelector(".invoice-logo");
     if (exportLogo && !exportLogo.complete) {
       await new Promise((resolve) => {
@@ -4505,7 +4554,7 @@ async function downloadInvoice() {
     const blob = await frameWin
       .html2pdf()
       .set({
-        margin: 8,
+        margin: 6,
         filename,
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: {
@@ -4515,6 +4564,12 @@ async function downloadInvoice() {
           backgroundColor: "#ffffff",
           logging: false,
           windowWidth: 420,
+          onclone: (clonedDoc) => {
+            const root = clonedDoc.getElementById("invoice-export-target");
+            if (root && !root.classList.contains("invoice-download")) {
+              root.classList.add("invoice-download");
+            }
+          },
         },
         jsPDF: { unit: "mm", format: "a5", orientation: "portrait" },
       })
