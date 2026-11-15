@@ -4499,11 +4499,14 @@ async function downloadInvoice() {
     }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-    await frameWin
+    const filename = invoiceDownloadFilename("pdf");
+    // Build the PDF in the iframe, then download from the parent window.
+    // Calling .save() inside the iframe and removing it in finally cancels the download.
+    const blob = await frameWin
       .html2pdf()
       .set({
         margin: 8,
-        filename: invoiceDownloadFilename("pdf"),
+        filename,
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: {
           scale: 2,
@@ -4516,7 +4519,14 @@ async function downloadInvoice() {
         jsPDF: { unit: "mm", format: "a5", orientation: "portrait" },
       })
       .from(target)
-      .save();
+      .outputPdf("blob");
+    // iframe Blobs fail `instanceof Blob` in the parent window (different realm).
+    const size = blob && typeof blob.size === "number" ? blob.size : 0;
+    if (!blob || size < 100) {
+      throw new Error("PDF export produced an empty file");
+    }
+    const parentBlob = new Blob([blob], { type: blob.type || "application/pdf" });
+    triggerBlobDownload(parentBlob, filename);
     toast("PDF saved to downloads", "success");
   } catch (err) {
     const reason = err?.message ? String(err.message).slice(0, 80) : "unknown error";
