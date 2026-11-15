@@ -4415,6 +4415,34 @@ function downloadInvoiceHtml(reason) {
   );
 }
 
+function applyInvoiceExportCssVars(el, colors) {
+  if (!el) return;
+  const vars = {
+    "--espresso": colors.primary,
+    "--caramel": colors.accent,
+    "--foam": colors.foam,
+    "--cream": colors.cream,
+    "--coffee": colors.coffee,
+    "--text-muted": colors.muted,
+    "--text-subtle": colors.subtle,
+    "--border": colors.border,
+    "--border-subtle": colors.border,
+    "--danger": "#c45c4a",
+    "--danger-light": "#fde8e4",
+  };
+  Object.entries(vars).forEach(([key, value]) => el.style.setProperty(key, value));
+}
+
+function loadScriptIntoDocument(doc, src) {
+  return new Promise((resolve, reject) => {
+    const script = doc.createElement("script");
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    doc.head.appendChild(script);
+  });
+}
+
 async function downloadInvoice() {
   const clone = cloneInvoicePrintArea();
   if (!clone) return;
@@ -4422,7 +4450,7 @@ async function downloadInvoice() {
   const btn = document.getElementById("btn-download-invoice");
   if (btn) btn.disabled = true;
 
-  const existing = document.getElementById("invoice-download-root");
+  const existing = document.getElementById("invoice-download-frame");
   if (existing) existing.remove();
 
   const logo = clone.querySelector(".invoice-logo");
@@ -4430,31 +4458,51 @@ async function downloadInvoice() {
     const dataUrl = await imageToDataUrl(logo.getAttribute("src"));
     if (dataUrl) logo.setAttribute("src", dataUrl);
   }
+  clone.querySelectorAll("[id]").forEach((node) => node.removeAttribute("id"));
 
   const colors = invoiceBrandColors();
-  const root = document.createElement("div");
-  root.id = "invoice-download-root";
-  // Keep in-viewport (tiny opacity) so html2canvas can measure layout reliably.
-  root.style.cssText =
-    "position:fixed;left:0;top:0;width:420px;background:#fff;opacity:0.01;pointer-events:none;z-index:0;";
-  root.innerHTML = `<style>${invoiceReceiptCss("#invoice-download-root", colors)}</style>`;
-  root.appendChild(clone);
-  document.body.appendChild(root);
+  // Run PDF capture inside a blank iframe so html2canvas never sees page
+  // stylesheets that use color(srgb …) / color-mix().
+  const frame = document.createElement("iframe");
+  frame.id = "invoice-download-frame";
+  frame.setAttribute("aria-hidden", "true");
+  frame.style.cssText =
+    "position:fixed;left:0;top:0;width:420px;height:900px;opacity:0.01;pointer-events:none;border:0;z-index:0;background:#fff;";
+  document.body.appendChild(frame);
+
+  const frameDoc = frame.contentDocument;
+  const frameWin = frame.contentWindow;
+  frameDoc.open();
+  frameDoc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;padding:8px;background:#fff;}
+    ${invoiceReceiptCss(".invoice-download", colors)}
+  </style></head><body><div class="invoice-download" id="invoice-export-target"></div></body></html>`);
+  frameDoc.close();
+
+  const targetWrap = frameDoc.getElementById("invoice-export-target");
+  targetWrap.appendChild(frameDoc.importNode(clone, true));
+  const target = targetWrap.querySelector(".invoice") || targetWrap;
 
   try {
-    const html2pdf = await ensureHtml2Pdf();
-    const exportLogo = root.querySelector(".invoice-logo");
+    await loadScriptIntoDocument(
+      frameDoc,
+      new URL("/static/vendor/html2pdf.bundle.min.js", window.location.origin).href
+    );
+    if (!frameWin.html2pdf) throw new Error("PDF library unavailable in export frame");
+
+    const exportLogo = target.querySelector(".invoice-logo");
     if (exportLogo && !exportLogo.complete) {
       await new Promise((resolve) => {
         exportLogo.onload = resolve;
         exportLogo.onerror = resolve;
       });
     }
-    // Export the invoice card itself, not the wrapper+style tag.
-    const target = root.querySelector(".invoice") || root;
-    await html2pdf()
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    await frameWin
+      .html2pdf()
       .set({
-        margin: [8, 8, 8, 8],
+        margin: 8,
         filename: invoiceDownloadFilename("pdf"),
         image: { type: "jpeg", quality: 0.98 },
         html2canvas: {
@@ -4463,6 +4511,7 @@ async function downloadInvoice() {
           allowTaint: true,
           backgroundColor: "#ffffff",
           logging: false,
+          windowWidth: 420,
         },
         jsPDF: { unit: "mm", format: "a5", orientation: "portrait" },
       })
@@ -4473,7 +4522,7 @@ async function downloadInvoice() {
     const reason = err?.message ? String(err.message).slice(0, 80) : "unknown error";
     downloadInvoiceHtml(reason);
   } finally {
-    root.remove();
+    frame.remove();
     if (btn) btn.disabled = false;
   }
 }
