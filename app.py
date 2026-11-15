@@ -653,6 +653,14 @@ def _migrate_business_tenancy(db):
         "CREATE INDEX IF NOT EXISTS idx_transactions_business ON transactions(business_id)"
     )
     db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transactions_biz_type_payment_created "
+        "ON transactions(business_id, type, payment_method, created_at)"
+    )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transactions_biz_payment_status "
+        "ON transactions(business_id, payment_status, voided_at)"
+    )
+    db.execute(
         "CREATE INDEX IF NOT EXISTS idx_seller_shifts_business_status "
         "ON seller_shifts(business_id, status)"
     )
@@ -3821,15 +3829,16 @@ def list_credit_sales():
             return jsonify({"error": "Invalid table filter"}), 400
 
     try:
-        limit = min(int(request.args.get("limit", 500)), 1000)
+        limit = min(int(request.args.get("limit", 200)), 500)
     except (TypeError, ValueError):
-        limit = 500
+        limit = 200
 
-    query = """
-        SELECT t.*, p.name AS product_name, p.category,
-               u.display_name AS seller_name,
-               st.name AS table_name,
-               sb.display_name AS settled_by_name
+    # Bound groups first, then hydrate full line items for those checkouts.
+    # This keeps "All Credits" fast even with large sales history.
+    ref_query = """
+        SELECT COALESCE(t.checkout_ref, 'line-' || t.id) AS sale_key,
+               MAX(t.created_at) AS created_at,
+               MAX(t.id) AS max_id
         FROM transactions t
         JOIN products p ON p.id = t.product_id
         LEFT JOIN users u ON u.id = t.user_id
@@ -3837,88 +3846,111 @@ def list_credit_sales():
         LEFT JOIN users sb ON sb.id = t.settled_by
         WHERE t.type = 'sale'
           AND t.business_id = ?
-          AND lower(COALESCE(t.payment_method, '')) = 'credit'
+          AND t.payment_method = 'credit'
     """
-    params = [biz_id]
+    ref_params = [biz_id]
 
     if status == "open":
-        query += """
+        ref_query += """
           AND t.voided_at IS NULL
-          AND (
-            t.payment_status = 'credit'
-            OR (t.payment_status IS NULL AND lower(COALESCE(t.payment_method, '')) = 'credit')
-          )
+          AND COALESCE(t.payment_status, 'credit') = 'credit'
         """
     elif status == "settled":
-        query += """
+        ref_query += """
           AND t.voided_at IS NULL
           AND t.payment_status = 'paid'
         """
     elif status == "voided":
-        query += " AND t.voided_at IS NOT NULL"
+        ref_query += " AND t.voided_at IS NOT NULL"
 
     if date_from:
-        query += " AND substr(t.created_at, 1, 10) >= ?"
-        params.append(date_from)
+        ref_query += " AND t.created_at >= ?"
+        ref_params.append(f"{date_from} 00:00:00")
     if date_to:
-        query += " AND substr(t.created_at, 1, 10) <= ?"
-        params.append(date_to)
+        ref_query += " AND t.created_at < ?"
+        # Inclusive end date: next-day exclusive bound avoids substr() scans.
+        end = parse_date(date_to)
+        if end:
+            ref_params.append((end + timedelta(days=1)).strftime("%Y-%m-%d") + " 00:00:00")
+        else:
+            ref_params.append(f"{date_to} 23:59:59")
     if settled_from:
-        query += " AND t.settled_at IS NOT NULL AND substr(t.settled_at, 1, 10) >= ?"
-        params.append(settled_from)
+        ref_query += " AND t.settled_at >= ?"
+        ref_params.append(f"{settled_from} 00:00:00")
     if settled_to:
-        query += " AND t.settled_at IS NOT NULL AND substr(t.settled_at, 1, 10) <= ?"
-        params.append(settled_to)
+        ref_query += " AND t.settled_at IS NOT NULL AND t.settled_at < ?"
+        end = parse_date(settled_to)
+        if end:
+            ref_params.append((end + timedelta(days=1)).strftime("%Y-%m-%d") + " 00:00:00")
+        else:
+            ref_params.append(f"{settled_to} 23:59:59")
     if parsed_table_id is not None:
-        query += " AND t.table_id = ?"
-        params.append(parsed_table_id)
+        ref_query += " AND t.table_id = ?"
+        ref_params.append(parsed_table_id)
     if settled_method:
-        query += " AND lower(COALESCE(t.settled_method, '')) = ?"
-        params.append(settled_method)
+        ref_query += " AND t.settled_method = ?"
+        ref_params.append(settled_method)
 
     user_clause, user_params = _sale_user_clause(user_id, "t")
-    query += user_clause
-    params.extend(user_params)
+    ref_query += user_clause
+    ref_params.extend(user_params)
 
-    # Keep full checkout groups when category/search matches any line.
-    if category or q:
-        match_clause = """
-            SELECT DISTINCT COALESCE(t2.checkout_ref, 'line-' || t2.id)
-            FROM transactions t2
-            JOIN products p2 ON p2.id = t2.product_id
-            LEFT JOIN users u2 ON u2.id = t2.user_id
-            LEFT JOIN service_tables st2 ON st2.id = t2.table_id
-            LEFT JOIN users sb2 ON sb2.id = t2.settled_by
-            WHERE t2.type = 'sale'
-              AND t2.business_id = ?
-              AND lower(COALESCE(t2.payment_method, '')) = 'credit'
+    if category:
+        ref_query += " AND p.category = ?"
+        ref_params.append(category)
+    if q:
+        like = f"%{q}%"
+        ref_query += """
+          AND (
+            COALESCE(t.notes, '') LIKE ?
+            OR COALESCE(t.checkout_ref, '') LIKE ?
+            OR COALESCE(p.name, '') LIKE ?
+            OR COALESCE(u.display_name, '') LIKE ?
+            OR COALESCE(st.name, '') LIKE ?
+            OR COALESCE(sb.display_name, '') LIKE ?
+          )
         """
-        match_params = [biz_id]
-        if category:
-            match_clause += " AND p2.category = ?"
-            match_params.append(category)
-        if q:
-            like = f"%{q}%"
-            match_clause += """
-              AND (
-                COALESCE(t2.notes, '') LIKE ?
-                OR COALESCE(t2.checkout_ref, '') LIKE ?
-                OR COALESCE(p2.name, '') LIKE ?
-                OR COALESCE(u2.display_name, '') LIKE ?
-                OR COALESCE(st2.name, '') LIKE ?
-                OR COALESCE(sb2.display_name, '') LIKE ?
-              )
-            """
-            match_params.extend([like, like, like, like, like, like])
-        query += f" AND COALESCE(t.checkout_ref, 'line-' || t.id) IN ({match_clause})"
-        params.extend(match_params)
+        ref_params.extend([like, like, like, like, like, like])
 
-    query += " ORDER BY t.created_at DESC, t.id DESC LIMIT ?"
-    params.append(limit)
+    ref_query += """
+        GROUP BY sale_key
+        ORDER BY created_at DESC, max_id DESC
+        LIMIT ?
+    """
+    ref_params.append(limit)
 
-    rows = db.execute(query, params).fetchall()
-    txs = [row_to_transaction(r) for r in rows]
-    sales = _group_sale_activity(txs)
+    sale_keys = [
+        r["sale_key"]
+        for r in db.execute(ref_query, ref_params).fetchall()
+    ]
+    if not sale_keys:
+        sales = []
+    else:
+        placeholders = ",".join("?" for _ in sale_keys)
+        detail_query = f"""
+            SELECT t.id, t.product_id, t.type, t.quantity, t.unit_price, t.total_amount,
+                   t.notes, t.checkout_ref, t.payment_method, t.payment_status,
+                   t.settled_at, t.settled_method, t.settled_by, t.user_id, t.table_id,
+                   t.created_at, t.voided_at,
+                   p.name AS product_name, p.category,
+                   u.display_name AS seller_name,
+                   st.name AS table_name,
+                   sb.display_name AS settled_by_name
+            FROM transactions t
+            JOIN products p ON p.id = t.product_id
+            LEFT JOIN users u ON u.id = t.user_id
+            LEFT JOIN service_tables st ON st.id = t.table_id
+            LEFT JOIN users sb ON sb.id = t.settled_by
+            WHERE t.type = 'sale'
+              AND t.business_id = ?
+              AND t.payment_method = 'credit'
+              AND COALESCE(t.checkout_ref, 'line-' || t.id) IN ({placeholders})
+            ORDER BY t.created_at DESC, t.id DESC
+        """
+        rows = db.execute(detail_query, [biz_id, *sale_keys]).fetchall()
+        txs = [row_to_transaction(r) for r in rows]
+        # Detail rows are newest-first, so grouped sales stay in that order.
+        sales = _group_sale_activity(txs)
 
     open_sales = [s for s in sales if s["status_label"] == "credit"]
     settled_sales = [s for s in sales if s["status_label"] == "paid"]

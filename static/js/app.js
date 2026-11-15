@@ -42,8 +42,8 @@ const state = {
   selectedHistoryShiftId: null,
   historyPage: 1,
   historyRowHtml: [],
-  creditsStatus: "all",
-  creditsPreset: "",
+  creditsStatus: "open",
+  creditsPreset: "month",
   creditsFrom: null,
   creditsTo: null,
   creditsSettledFrom: null,
@@ -56,6 +56,7 @@ const state = {
   creditsReport: null,
   creditsPage: 1,
   creditsRowHtml: [],
+  creditsRequestId: 0,
   activityLogs: [],
   activityPage: 1,
   lotsPage: 1,
@@ -2074,9 +2075,11 @@ function showDashboardSkeleton() {
 
 // ── Categories ─────────────────────────────────────────────────────────────
 
-async function loadCategories() {
+async function loadCategories({ force = false } = {}) {
   try {
-    state.categories = await api("/api/categories");
+    if (force || !state.categories?.length) {
+      state.categories = await api("/api/categories");
+    }
     populateCategorySelects();
   } catch (e) {
     toast(e.message, "error");
@@ -5703,10 +5706,12 @@ document.querySelectorAll(".qty-preset").forEach((btn) => {
 
 // ── History ────────────────────────────────────────────────────────────────
 
-async function loadSellers() {
+async function loadSellers({ force = false } = {}) {
   if (isSeller()) return;
   try {
-    state.sellers = await api("/api/sellers");
+    if (force || !state.sellers?.length) {
+      state.sellers = await api("/api/sellers");
+    }
     populateSellerFilter("history-seller-filter", state.historySellerId);
     populateSellerFilter("sales-seller-filter", state.salesSellerId);
     populateSellerFilter("credits-seller-filter", state.creditsSellerId);
@@ -5734,11 +5739,14 @@ function populateCreditsTableFilter() {
 
 function syncCreditsUiFromState() {
   document.querySelectorAll("#credits-status-chips .filter-chip").forEach((chip) => {
-    chip.classList.toggle("active", chip.dataset.creditsStatus === (state.creditsStatus || "all"));
+    chip.classList.toggle(
+      "active",
+      chip.dataset.creditsStatus === (state.creditsStatus ?? "open")
+    );
   });
   document.querySelectorAll("#credits-period-filters .period-btn").forEach((btn) => {
     const preset = btn.dataset.creditsPreset ?? "";
-    btn.classList.toggle("active", preset === (state.creditsPreset || ""));
+    btn.classList.toggle("active", preset === (state.creditsPreset ?? "month"));
   });
   const customBar = document.getElementById("credits-custom-range-bar");
   if (customBar) customBar.hidden = state.creditsPreset !== "custom";
@@ -5762,15 +5770,38 @@ function syncCreditsUiFromState() {
   populateCreditsTableFilter();
 }
 
+function showCreditsLoading() {
+  const stats = document.getElementById("credits-summary-stats");
+  if (stats) {
+    stats.innerHTML = Array(4)
+      .fill(0)
+      .map(
+        () => `
+    <div class="stat-card stat-card-v2 skeleton-stat">
+      <div class="skeleton-stat-icon skeleton"></div>
+      <div class="stat-content" style="flex:1">
+        <div class="skeleton skeleton-text sm" style="width:55%"></div>
+        <div class="skeleton skeleton-text lg" style="width:60%"></div>
+        <div class="skeleton skeleton-text sm" style="width:40%"></div>
+      </div>
+    </div>`
+      )
+      .join("");
+  }
+  showTableSkeleton("credits-table-body", 9, 6);
+}
+
 async function loadCreditsView() {
   syncCreditsUiFromState();
-  await Promise.all([
+  showCreditsLoading();
+  // Start credits immediately; fill filter dropdowns in parallel without blocking.
+  const creditsPromise = loadCredits();
+  Promise.all([
     loadSellers(),
     loadCategories(),
     ensureServiceTablesLoaded().catch(() => {}),
-  ]);
-  syncCreditsUiFromState();
-  await loadCredits();
+  ]).then(() => syncCreditsUiFromState());
+  await creditsPromise;
 }
 
 async function ensureServiceTablesLoaded() {
@@ -5784,8 +5815,9 @@ async function ensureServiceTablesLoaded() {
 }
 
 async function loadCredits() {
-  const params = new URLSearchParams({ limit: "500" });
-  const status = state.creditsStatus || "all";
+  const requestId = ++state.creditsRequestId;
+  const params = new URLSearchParams({ limit: "200" });
+  const status = state.creditsStatus || "open";
   if (status && status !== "all") params.set("status", status);
 
   if (state.creditsPreset && state.creditsPreset !== "custom") {
@@ -5803,11 +5835,14 @@ async function loadCredits() {
   if (state.creditsSearch) params.set("q", state.creditsSearch);
 
   try {
+    showCreditsLoading();
     const data = await api(`/api/sales/credits?${params}`);
+    if (requestId !== state.creditsRequestId) return;
     state.creditsReport = data;
     state.creditsPage = 1;
     renderCredits(data);
   } catch (e) {
+    if (requestId !== state.creditsRequestId) return;
     toast(e.message, "error");
   }
 }
@@ -8242,7 +8277,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const debouncedLoadCredits = debounce(() => {
     readCreditsFiltersFromDom();
     loadCredits();
-  }, 200);
+  }, 300);
   document.getElementById("credits-search")?.addEventListener("input", debouncedLoadCredits);
   [
     "credits-seller-filter",
