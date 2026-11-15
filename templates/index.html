@@ -632,6 +632,10 @@
                 <input type="text" id="sell-notes" placeholder="Customer name, order ref...">
                 <p class="shift-field-hint" id="sell-credit-hint" hidden>Credit sales need the customer name in Notes.</p>
               </div>
+              <button type="button" class="btn btn-ghost btn-block" id="btn-print-order" title="Print order details before confirming payment">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                Print Order
+              </button>
               <button type="button" class="btn btn-primary btn-lg btn-block" id="btn-complete-sale">
                 Receive Payment
               </button>
@@ -2544,7 +2548,7 @@
   <div class="modal-overlay" id="invoice-modal" hidden>
     <div class="modal modal-invoice">
       <div class="modal-header no-print">
-        <h3>Sale Invoice</h3>
+        <h3 id="invoice-modal-title">Sale Invoice</h3>
         <button class="modal-close" type="button" data-close-modal>&times;</button>
       </div>
       <div class="invoice" id="invoice-print-area">
@@ -2559,11 +2563,12 @@
           >
           <div class="invoice-brand-text">
             <h2 id="invoice-business-name">{{ brand_name }}</h2>
-            <p>Sales Invoice</p>
+            <p id="invoice-doc-label">Sales Invoice</p>
           </div>
         </div>
         <div class="invoice-body">
           <div class="invoice-voided-banner" id="invoice-voided-banner" hidden>This sale has been voided</div>
+          <div class="invoice-pending-banner" id="invoice-pending-banner" hidden>Order not yet confirmed</div>
           <dl class="invoice-meta" id="invoice-meta"></dl>
           <table class="invoice-table">
             <thead>
@@ -2578,14 +2583,14 @@
           </table>
           <div class="invoice-totals" id="invoice-totals"></div>
           <p class="invoice-notes" id="invoice-notes" hidden></p>
-          <p class="invoice-footer">Thank you for your purchase</p>
+          <p class="invoice-footer" id="invoice-footer">Thank you for your purchase</p>
         </div>
       </div>
       <div class="modal-actions invoice-actions no-print">
         <button type="button" class="btn btn-ghost" data-close-modal>Done</button>
         <button type="button" class="btn btn-primary" id="btn-print-invoice">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-          Print Invoice
+          <span id="btn-print-invoice-label">Print Invoice</span>
         </button>
       </div>
     </div>

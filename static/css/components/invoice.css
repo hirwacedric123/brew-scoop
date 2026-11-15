@@ -218,6 +218,18 @@
   border: 1px solid rgba(196, 92, 74, 0.25);
 }
 
+.invoice-pending-banner {
+  background: var(--cream);
+  color: var(--coffee);
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--radius-xs);
+  margin-bottom: 0.75rem;
+  border: 1px dashed var(--caramel);
+}
+
 /* Screen print fallback */
 @media print {
   @page {

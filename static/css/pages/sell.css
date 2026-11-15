@@ -899,6 +899,18 @@
   margin-top: 0.5rem;
 }
 
+#btn-print-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-bottom: 0.15rem;
+}
+
+#btn-print-order svg {
+  flex-shrink: 0;
+}
+
 /* ── Checkout lines (sale confirmation summary) ──────────────────────────── */
 
 .checkout-lines {

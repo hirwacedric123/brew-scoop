@@ -3960,18 +3960,37 @@ function showInvoice(invoice) {
   const totals = document.getElementById("invoice-totals");
   const notesEl = document.getElementById("invoice-notes");
   const voidBanner = document.getElementById("invoice-voided-banner");
+  const pendingBanner = document.getElementById("invoice-pending-banner");
+  const modalTitle = document.getElementById("invoice-modal-title");
+  const docLabel = document.getElementById("invoice-doc-label");
+  const footer = document.getElementById("invoice-footer");
+  const printLabel = document.getElementById("btn-print-invoice-label");
   if (!meta || !lines || !totals) return;
 
+  const isPending = !!invoice.is_pending;
   const seller = invoice.seller_name || "—";
-  const payment = invoice.payment_label || paymentMethodLabel(invoice.payment_method);
+  const payment = isPending
+    ? invoice.payment_label || (invoice.payment_method ? paymentMethodLabel(invoice.payment_method) : "Pending")
+    : invoice.payment_label || paymentMethodLabel(invoice.payment_method);
   const when = invoice.created_at ? formatDate(invoice.created_at) : formatDate(new Date().toISOString());
+  const refLabel = isPending ? "Order #" : "Invoice #";
+  const refValue = isPending ? invoice.checkout_ref || "Pending" : invoice.checkout_ref || "—";
 
   if (voidBanner) voidBanner.hidden = !invoice.is_voided;
+  if (pendingBanner) pendingBanner.hidden = !isPending;
+  if (modalTitle) modalTitle.textContent = isPending ? "Order Ticket" : "Sale Invoice";
+  if (docLabel) docLabel.textContent = isPending ? "Order Ticket" : "Sales Invoice";
+  if (footer) {
+    footer.textContent = isPending
+      ? "Order not yet confirmed — payment still pending"
+      : "Thank you for your purchase";
+  }
+  if (printLabel) printLabel.textContent = isPending ? "Print Order" : "Print Invoice";
 
   meta.innerHTML = `
     <div>
-      <dt>Invoice #</dt>
-      <dd>${esc(invoice.checkout_ref || "—")}</dd>
+      <dt>${refLabel}</dt>
+      <dd>${esc(refValue)}</dd>
     </div>
     <div>
       <dt>Date</dt>
@@ -4026,6 +4045,46 @@ function showInvoice(invoice) {
   }
 
   showModal("invoice-modal");
+}
+
+function selectedSellTableName() {
+  const select = document.getElementById("sell-table");
+  if (!select?.value) return "";
+  const option = select.selectedOptions?.[0];
+  return option?.textContent?.trim() || "";
+}
+
+function invoiceFromCart() {
+  const notes = document.getElementById("sell-notes")?.value.trim() || "";
+  const totalUnits = state.cart.reduce((sum, item) => sum + item.quantity, 0);
+  return {
+    checkout_ref: null,
+    created_at: new Date().toISOString(),
+    payment_method: state.paymentMethod || null,
+    payment_label: state.paymentMethod ? paymentMethodLabel(state.paymentMethod) : "Pending",
+    table_name: selectedSellTableName(),
+    seller_name: state.currentUser?.display_name || state.currentUser?.username || "—",
+    notes: notes || null,
+    total_amount: getCartTotal(),
+    total_units: totalUnits,
+    is_voided: false,
+    is_pending: true,
+    items: state.cart.map((item) => ({
+      product_name: item.name,
+      category: item.category || "",
+      quantity: item.quantity,
+      unit_price: item.price,
+      total_amount: item.price * item.quantity,
+    })),
+  };
+}
+
+function printOrderFromCart() {
+  if (!state.cart.length) {
+    toast("Cart is empty", "error");
+    return;
+  }
+  showInvoice(invoiceFromCart());
 }
 
 function printInvoice() {
@@ -4159,6 +4218,19 @@ function printInvoice() {
           font-weight: 600;
           text-align: center;
           border-radius: 4px;
+        }
+        #invoice-print-root .invoice-pending-banner {
+          margin: 0 0 8px;
+          padding: 4px 6px;
+          border: 1px dashed ${printAccent};
+          color: ${printCoffee};
+          background: ${printCream};
+          font-size: 8.5pt;
+          font-weight: 600;
+          text-align: center;
+          border-radius: 4px;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
         }
         #invoice-print-root .invoice-table {
           width: 100%;
@@ -8220,6 +8292,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initPaymentMethods();
   initSellTableSelect();
   document.getElementById("btn-complete-sale").addEventListener("click", completeCheckout);
+  document.getElementById("btn-print-order")?.addEventListener("click", printOrderFromCart);
   document.getElementById("btn-clear-cart").addEventListener("click", clearCart);
   document.getElementById("btn-refresh-activity")?.addEventListener("click", () => {
     loadDashboard().catch((err) => toast(err.message, "error"));
