@@ -704,7 +704,7 @@ def _migrate_business_branding(db):
            WHERE accent_color IS NULL OR TRIM(accent_color) = ''""",
         (DEFAULT_ACCENT_COLOR,),
     )
-    # Move legacy coffee-brown defaults to the Cundino green/cream palette.
+    # Move Cundino green/cream defaults back to the Brew & Scoop coffee palette.
     db.execute(
         """UPDATE businesses
            SET primary_color = ?

@@ -6,8 +6,8 @@
 
 :root {
   /* Brand roots (overridden per business) */
-  --espresso: #012100;
-  --caramel: #efd196;
+  --espresso: #2c1810;
+  --caramel: #c4a574;
   --brand-primary: var(--espresso);
   --brand-accent: var(--caramel);
 

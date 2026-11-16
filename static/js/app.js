@@ -717,7 +717,7 @@ function productCell(name, sub) {
   </div>`;
 }
 
-function resolveCssColor(cssValue, fallback = "#012100") {
+function resolveCssColor(cssValue, fallback = "#2c1810") {
   if (!cssValue || typeof document === "undefined" || !document.body) return fallback;
   const probe = document.createElement("span");
   probe.style.cssText = `position:absolute;left:-9999px;visibility:hidden;color:${cssValue}`;
@@ -990,9 +990,9 @@ function loadAdminView() {
 }
 
 const DEFAULT_BRANDING = {
-  logo_url: "/static/img/logo.png?v=cundino1",
-  primary_color: "#012100",
-  accent_color: "#efd196",
+  logo_url: "/static/img/logo.png?v=brewscoop2",
+  primary_color: "#2c1810",
+  accent_color: "#c4a574",
 };
 
 const ACTIVITY_DETAIL_LABELS = {
@@ -4093,7 +4093,7 @@ function printOrderFromCart() {
 }
 
 /** Convert CSS colors (including color(srgb …)) to #rrggbb for PDF/canvas. */
-function normalizeCssColor(value, fallback = "#012100") {
+function normalizeCssColor(value, fallback = "#2c1810") {
   if (!value) return fallback;
   const raw = String(value).trim();
   if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) {
@@ -4119,7 +4119,7 @@ function normalizeCssColor(value, fallback = "#012100") {
 
 function invoiceBrandColors() {
   return {
-    primary: normalizeCssColor(brandColor("--espresso"), "#012100"),
+    primary: normalizeCssColor(brandColor("--espresso"), "#2c1810"),
     accent: normalizeCssColor(brandColor("--caramel"), "#b07a4a"),
     foam: normalizeCssColor(brandColor("--foam"), "#fffaf2"),
     cream: normalizeCssColor(brandColor("--cream"), "#f5efe4"),
@@ -4342,7 +4342,7 @@ function invoiceExportFontLinks() {
 function cloneInvoicePrintArea() {
   const area = document.getElementById("invoice-print-area");
   if (!area) return null;
-  const logoSrc = area.querySelector(".invoice-logo")?.getAttribute("src") || "/static/img/logo.png?v=cundino1";
+  const logoSrc = area.querySelector(".invoice-logo")?.getAttribute("src") || "/static/img/logo.png?v=brewscoop2";
   const clone = area.cloneNode(true);
   const logo = clone.querySelector(".invoice-logo");
   if (logo) {
