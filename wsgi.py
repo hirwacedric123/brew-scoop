@@ -7,9 +7,13 @@ On PythonAnywhere Web → WSGI configuration file, either:
 
 import sys
 
-# PythonAnywhere account: ishya
-project_home = "/home/ishya/brew-scoop"
-if project_home not in sys.path:
-    sys.path.insert(0, project_home)
+# Prefer the live PythonAnywhere home for this deploy target.
+for project_home in (
+    "/home/brewscoop/brew-scoop",
+    "/home/ishya/brew-scoop",
+):
+    if project_home not in sys.path:
+        sys.path.insert(0, project_home)
+    break
 
 from app import app as application  # noqa: E402
