@@ -7761,9 +7761,11 @@ function openAddUser() {
   document.getElementById("user-form").reset();
   document.getElementById("user-id").value = "";
   document.getElementById("user-username").disabled = false;
-  document.getElementById("user-password").required = true;
-  document.getElementById("user-password-group").hidden = false;
-  document.getElementById("user-pin").value = "";
+  document.getElementById("user-password").required = false;
+  document.getElementById("user-password-group").hidden = true;
+  const pinInput = document.getElementById("user-pin");
+  pinInput.value = "";
+  pinInput.required = true;
   document.getElementById("user-active-group").hidden = true;
   document.getElementById("user-role").value = "seller";
   syncUserBusinessField(state.currentBusiness?.id);
@@ -7782,8 +7784,10 @@ function openEditUser(id) {
   document.getElementById("user-username").disabled = true;
   document.getElementById("user-password").value = "";
   document.getElementById("user-password").required = false;
-  document.getElementById("user-password-group").hidden = false;
-  document.getElementById("user-pin").value = "";
+  document.getElementById("user-password-group").hidden = true;
+  const pinInput = document.getElementById("user-pin");
+  pinInput.value = "";
+  pinInput.required = false;
   document.getElementById("user-active-group").hidden = false;
   document.getElementById("user-role").value = user.role;
   document.getElementById("user-active").checked = user.is_active;
@@ -7816,8 +7820,6 @@ async function saveUser(e) {
     role,
   };
 
-  const password = document.getElementById("user-password").value;
-  if (password) payload.password = password;
   const pin = document.getElementById("user-pin")?.value.trim() || "";
   if (pin) payload.pin = pin;
   if (role === "admin") {
@@ -7836,8 +7838,8 @@ async function saveUser(e) {
       );
     } else {
       payload.username = document.getElementById("user-username").value;
-      if (!password) {
-        toast("Password is required for new users", "error");
+      if (!pin) {
+        toast("PIN is required for new users", "error");
         return;
       }
       await api("/api/admin/users", { method: "POST", body: JSON.stringify(payload) });

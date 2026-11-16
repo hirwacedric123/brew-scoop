@@ -270,8 +270,7 @@ def validate_user_payload(data, creating=False):
     if not username.replace("_", "").replace("-", "").isalnum():
         return "Username may only contain letters, numbers, hyphens, and underscores"
 
-    if creating and not password:
-        return "Password is required"
+    # New users sign in with PIN only; password is optional (e.g. edit/reset).
     if password and len(password) < 6:
         return "Password must be at least 6 characters"
 

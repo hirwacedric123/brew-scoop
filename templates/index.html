@@ -2203,15 +2203,15 @@
           <input type="email" id="user-email-input" placeholder="e.g. seller@example.com">
           <p class="form-hint">Used for daily reports and password reset emails</p>
         </div>
-        <div class="form-group" id="user-password-group">
-          <label for="user-password">Temporary password *</label>
-          <input type="password" id="user-password" minlength="6" placeholder="At least 6 characters">
-          <p class="form-hint">The user must change this password on first sign-in</p>
+        <div class="form-group" id="user-password-group" hidden>
+          <label for="user-password">Password</label>
+          <input type="password" id="user-password" minlength="6" placeholder="Leave blank to keep unchanged">
+          <p class="form-hint">Optional. New users sign in with PIN only.</p>
         </div>
         <div class="form-group">
-          <label for="user-pin">Login PIN</label>
-          <input type="text" id="user-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="4–6 digits (optional)">
-          <p class="form-hint">Unique PIN for keypad sign-in. Leave blank to keep unchanged when editing.</p>
+          <label for="user-pin">Login PIN *</label>
+          <input type="text" id="user-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="4–6 digits" required>
+          <p class="form-hint">Unique PIN for keypad sign-in. Required for new users; leave blank when editing to keep unchanged.</p>
         </div>
         <div class="form-group">
           <label for="user-role">Role</label>

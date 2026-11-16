@@ -2364,26 +2364,34 @@ def admin_create_user():
             return jsonify({"error": "Business not found or inactive"}), 400
         link_biz_id = requested_biz
 
-    pin = None
-    if data.get("pin") not in (None, ""):
-        pin_error, pin = validate_pin(data.get("pin"))
-        if pin_error:
-            return jsonify({"error": pin_error}), 400
-        if pin_taken(db, pin, business_id=link_biz_id):
-            return jsonify({"error": "That PIN is already used by another account"}), 409
+    pin_error, pin = validate_pin(data.get("pin"))
+    if pin_error:
+        return jsonify({"error": pin_error}), 400
+    if pin_taken(db, pin, business_id=link_biz_id):
+        return jsonify({"error": "That PIN is already used by another account"}), 409
+
+    # Sign-in is PIN-only. Store an unusable password hash so the column stays
+    # NOT NULL without forcing a must-change-password flow that breaks PIN login.
+    if data.get("password"):
+        password_hash = hash_password(data["password"])
+        must_change_password = 1
+    else:
+        password_hash = hash_password(secrets.token_urlsafe(32))
+        must_change_password = 0
 
     ts = now_iso()
     cur = db.execute(
         """INSERT INTO users
            (username, password_hash, display_name, email, role, is_active,
-            must_change_password, pin, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?, ?)""",
+            must_change_password, pin, must_change_pin, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, ?, ?)""",
         (
             data["username"].strip(),
-            hash_password(data["password"]),
+            password_hash,
             (data.get("display_name") or data["username"]).strip(),
             email,
             role,
+            must_change_password,
             pin,
             ts,
             ts,
