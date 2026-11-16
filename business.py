@@ -11,7 +11,7 @@ ROLES = ("admin", "supervisor", "stock_manager", "seller")
 
 DEFAULT_PRIMARY_COLOR = "#2c1810"
 DEFAULT_ACCENT_COLOR = "#c4a574"
-DEFAULT_LOGO_URL = "/static/img/logo.png?v=brewscoop2"
+DEFAULT_LOGO_URL = "/static/img/logo.png?v=brewscoop3"
 # Previous Cundino defaults — migrated back to Brew & Scoop coffee palette.
 LEGACY_DEFAULT_PRIMARY_COLOR = "#012100"
 LEGACY_DEFAULT_ACCENT_COLOR = "#efd196"

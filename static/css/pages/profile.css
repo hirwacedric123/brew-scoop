@@ -26,8 +26,8 @@
 .profile-page {
   display: flex;
   flex-direction: column;
-  gap: 1.35rem;
-  max-width: 920px;
+  gap: 1.25rem;
+  max-width: 1080px;
   animation: profile-page-in 0.4s ease;
 }
 
@@ -173,13 +173,15 @@
 .profile-layout {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1.25rem;
-  align-items: start;
+  gap: 1.15rem;
+  align-items: stretch;
 }
 
 .profile-card {
+  height: 100%;
   transition: box-shadow var(--transition), transform var(--transition);
 }
+
 
 .profile-card:hover {
   box-shadow: var(--shadow-hover);
@@ -214,7 +216,8 @@
   border-top: 3px solid var(--caramel);
 }
 
-.profile-card-security {
+.profile-card.profile-card-security {
+  grid-column: 1 / -1;
   border-top: 3px solid var(--coffee);
 }
 

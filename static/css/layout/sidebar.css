@@ -2,10 +2,16 @@
 
 .sidebar {
   width: var(--sidebar-width);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--caramel) 10%, transparent) 0%, transparent 38%),
-    linear-gradient(180deg, var(--espresso) 0%, var(--espresso-deep) 100%);
-  color: var(--cream);
+  /* Solid fallback first — if color-mix/gradients fail, nav stays readable */
+  background-color: var(--espresso, #2c1810);
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--caramel, #c4a574) 10%, transparent) 0%, transparent 38%),
+    linear-gradient(
+      180deg,
+      var(--espresso, #2c1810) 0%,
+      var(--espresso-deep, #1f0f08) 100%
+    );
+  color: #f5e6d3;
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -14,13 +20,13 @@
   bottom: 0;
   z-index: 100;
   padding: 1.35rem 0.85rem;
-  border-right: 1px solid color-mix(in srgb, var(--caramel) 22%, transparent);
-  box-shadow: 4px 0 40px color-mix(in srgb, var(--espresso) 18%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--caramel, #c4a574) 22%, transparent);
+  box-shadow: 4px 0 40px color-mix(in srgb, var(--espresso, #2c1810) 18%, transparent);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--caramel) 35%, transparent) transparent;
+  scrollbar-color: color-mix(in srgb, var(--caramel, #c4a574) 35%, transparent) transparent;
 }
 
 .sidebar::-webkit-scrollbar {
@@ -53,10 +59,14 @@
 
 .brand-logo {
   width: 100%;
-  max-width: 210px;
+  max-width: 200px;
   height: auto;
+  max-height: 132px;
   display: block;
   object-fit: contain;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  padding: 0.35rem;
   filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.35));
 }
 
@@ -311,10 +321,10 @@
   padding: 0.7rem 0.9rem;
   border: none;
   background: transparent;
-  color: color-mix(in srgb, var(--cream) 65%, transparent);
+  color: rgba(245, 230, 211, 0.88);
   font-family: var(--font-body);
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition);
@@ -326,13 +336,13 @@
   width: 19px;
   height: 19px;
   flex-shrink: 0;
-  opacity: 0.75;
+  opacity: 0.9;
   transition: opacity var(--transition);
 }
 
 .nav-item:hover {
-  background: color-mix(in srgb, var(--cream) 7%, transparent);
-  color: var(--cream);
+  background: rgba(245, 230, 211, 0.1);
+  color: #faf6f1;
 }
 
 .nav-item:hover svg {
@@ -342,11 +352,11 @@
 .nav-item.active {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--caramel) 34%, transparent) 0%,
-    color-mix(in srgb, var(--caramel) 10%, transparent) 100%
+    color-mix(in srgb, var(--caramel, #c4a574) 40%, transparent) 0%,
+    color-mix(in srgb, var(--caramel, #c4a574) 12%, transparent) 100%
   );
-  color: var(--cream);
-  box-shadow: inset 3px 0 0 var(--caramel);
+  color: #faf6f1;
+  box-shadow: inset 3px 0 0 var(--caramel, #c4a574);
 }
 
 .nav-item.active svg {
@@ -417,6 +427,7 @@
 .user-meta strong {
   display: block;
   font-size: 0.82rem;
+  color: #faf6f1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -425,13 +436,13 @@
 .user-meta span {
   display: block;
   font-size: 0.68rem;
-  color: color-mix(in srgb, var(--cream) 55%, transparent);
+  color: rgba(245, 230, 211, 0.72);
   text-transform: capitalize;
 }
 
 .btn-logout {
   padding: 0.4rem;
-  color: color-mix(in srgb, var(--cream) 70%, transparent);
+  color: rgba(245, 230, 211, 0.82);
   flex-shrink: 0;
   border-radius: var(--radius-xs);
 }
@@ -442,7 +453,7 @@
 }
 
 .btn-logout:hover {
-  color: var(--cream);
+  color: #faf6f1;
   background: rgba(255, 255, 255, 0.1);
 }
 

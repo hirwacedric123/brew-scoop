@@ -990,7 +990,7 @@ function loadAdminView() {
 }
 
 const DEFAULT_BRANDING = {
-  logo_url: "/static/img/logo.png?v=brewscoop2",
+  logo_url: "/static/img/logo.png?v=brewscoop3",
   primary_color: "#2c1810",
   accent_color: "#c4a574",
 };
@@ -4342,7 +4342,7 @@ function invoiceExportFontLinks() {
 function cloneInvoicePrintArea() {
   const area = document.getElementById("invoice-print-area");
   if (!area) return null;
-  const logoSrc = area.querySelector(".invoice-logo")?.getAttribute("src") || "/static/img/logo.png?v=brewscoop2";
+  const logoSrc = area.querySelector(".invoice-logo")?.getAttribute("src") || "/static/img/logo.png?v=brewscoop3";
   const clone = area.cloneNode(true);
   const logo = clone.querySelector(".invoice-logo");
   if (logo) {
